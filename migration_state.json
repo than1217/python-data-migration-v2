@@ -1,0 +1,9 @@
+{
+    "processed_tables": [
+        "lib_sex"
+    ],
+    "migrated_tables": [],
+    "pattern": "lib_sex",
+    "from_list": null,
+    "suffix": "_v3"
+}

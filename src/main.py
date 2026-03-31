@@ -1,0 +1,538 @@
+import os
+import subprocess
+import re
+import json
+import time
+import sys
+import getpass
+import mysql.connector
+import logging
+from mysql.connector import Error
+import config
+from tqdm import tqdm
+
+# Set up logging to migration.log
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log_file = os.path.join(base_dir, "migration.log")
+state_file = os.path.join(base_dir, "migration_state.json")
+
+MAX_RETRIES = 3
+RETRY_DELAY = 5
+
+logging.basicConfig(
+    filename=log_file,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filemode='a' # Use 'a' to append so we keep history across sessions
+)
+logger = logging.getLogger(__name__)
+
+def load_state():
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading state file: {e}")
+    return {"processed_tables": [], "migrated_tables": [], "pattern": None, "from_list": None}
+
+def save_state(state):
+    try:
+        with open(state_file, 'w') as f:
+            json.dump(state, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving state file: {e}")
+
+def get_lib_tables(pattern=None, from_list=None):
+    """Connects to MySQL and retrieves tables based on a pattern or a specific list."""
+    logger.info(f"Connecting to MySQL Server {config.DB_HOST}...")
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            conn = mysql.connector.connect(
+                host=config.DB_HOST,
+                database=config.DB_DATABASE,
+                user=config.DB_USER,
+                password=config.DB_PASSWORD,
+                connect_timeout=10
+            )
+            if conn.is_connected():
+                logger.info(f"Successfully connected to database '{config.DB_DATABASE}'.")
+                
+                cursor = conn.cursor()
+                cursor.execute("SHOW TABLES")
+                
+                all_tables = [row[0] for row in cursor.fetchall()]
+                tables = []
+                
+                if from_list:
+                    # Filter based on the explicit list provided
+                    tables = [t for t in all_tables if t in from_list]
+                else:
+                    # Filter based on pattern (default to '^lib_.*' if none provided)
+                    if not pattern:
+                        pattern = r'^lib_.*'
+                        
+                    regex = re.compile(pattern)
+                    
+                    for table_name in all_tables:
+                        if not regex.match(table_name):
+                            continue
+                            
+                        # 1. Exclude tables ending with _old
+                        if table_name.endswith('_old'):
+                            continue
+                        
+                        # 2. Exclude tables with year values below 2020
+                        # Find all 4-digit numbers in the table name
+                        years_found = re.findall(r'\d{4}', table_name)
+                        is_old_year = False
+                        for year_str in years_found:
+                            year = int(year_str)
+                            # If it's a realistic year value and below 2020, exclude it
+                            if 2000 <= year < 2020:
+                                is_old_year = True
+                                break
+                        
+                        if is_old_year:
+                            logger.info(f"Skipping table '{table_name}' (reason: year below 2020)")
+                            continue
+                        
+                        tables.append(table_name)
+                
+                cursor.close()
+                conn.close()
+                return tables
+                
+        except Error as e:
+            logger.error(f"Attempt {attempt}/{MAX_RETRIES} - Error connecting to MySQL: {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+    
+    return []
+
+def run_mysqldump(table, output_file):
+    """Executes mysqldump on the command line for the provided table"""
+    
+    command_str = (
+        f'"{config.MYSQLDUMP_PATH}" -h {config.DB_HOST} -u {config.DB_USER} --password="{config.DB_PASSWORD}" '
+        f'--no-tablespaces --skip-lock-tables --skip-add-locks --set-gtid-purged=OFF {config.DB_DATABASE} {table}'
+    )
+    
+    logger.info(f"Dumping table '{table}' to {output_file}...")
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with open(output_file, "w", encoding="utf-8") as f:
+                result = subprocess.run(command_str, stdout=f, stderr=subprocess.PIPE, text=True, check=True, shell=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Attempt {attempt}/{MAX_RETRIES} failed to dump table '{table}': {e.stderr}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+        except Exception as e:
+            logger.error(f"Attempt {attempt}/{MAX_RETRIES} unexpected error during mysqldump for '{table}': {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+    return False
+
+def process_dump_file(input_file, output_file, table_name, suffix):
+    """Reads the raw SQL dump, updates the table name, engine, and collation, and saves it to a new file"""
+    logger.info(f"Processing table '{table_name}' dump...")
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # 1. Add suffix to the table name
+        new_table_name = f"{table_name}{suffix}"
+        content = re.sub(f"`{table_name}`", f"`{new_table_name}`", content)
+
+        # 2. Replace MyISAM with InnoDB
+        content = re.sub(r'ENGINE=MyISAM', 'ENGINE=InnoDB', content, flags=re.IGNORECASE)
+        
+        # 3. Replace Table-level character sets
+        content = re.sub(r'CHARSET=\w+', 'CHARSET=utf8mb4', content, flags=re.IGNORECASE)
+        
+        # 4. Explicitly add Table-level collation if missing, or replace if existing
+        if re.search(r'COLLATE=\w+', content, flags=re.IGNORECASE):
+            content = re.sub(r'COLLATE=\w+', 'COLLATE=utf8mb4_0900_ai_ci', content, flags=re.IGNORECASE)
+        else:
+            # If CHARSET=utf8mb4 is there but no COLLATE, append it
+            content = re.sub(r'(CHARSET=utf8mb4)', r'\1 COLLATE=utf8mb4_0900_ai_ci', content, flags=re.IGNORECASE)
+            
+        # 5. Replace Column-level character sets and collations
+        content = re.sub(r'CHARACTER SET \w+', 'CHARACTER SET utf8mb4', content, flags=re.IGNORECASE)
+        content = re.sub(r'COLLATE \w+', 'COLLATE utf8mb4_0900_ai_ci', content, flags=re.IGNORECASE)
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+        logger.info(f"Successfully processed table '{table_name}'.")
+            
+    except Exception as e:
+        logger.error(f"Error processing dump file for '{table_name}': {e}")
+
+def create_destination_db():
+    """Connects to MySQL and creates the destination database if it doesn't exist."""
+    logger.info(f"Connecting to destination server {config.DEST_DB_HOST}...")
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            conn = mysql.connector.connect(
+                host=config.DEST_DB_HOST,
+                user=config.DEST_DB_USER,
+                password=config.DEST_DB_PASSWORD,
+                connect_timeout=10
+            )
+            if conn.is_connected():
+                cursor = conn.cursor()
+                cursor.execute(f"CREATE DATABASE IF NOT EXISTS {config.DEST_DB_DATABASE}")
+                logger.info(f"Database '{config.DEST_DB_DATABASE}' ensured on destination.")
+                cursor.close()
+                conn.close()
+                return True
+        except Error as e:
+            logger.error(f"Attempt {attempt}/{MAX_RETRIES} - Error creating destination DB: {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+    return False
+
+def load_sql_file(filepath):
+    """Loads a SQL dump file into the destination database using the mysql client."""
+    filename = os.path.basename(filepath)
+    command_str = (
+        f'"{config.MYSQL_PATH}" -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
+        f'{config.DEST_DB_DATABASE}'
+    )
+
+    logger.info(f"Loading {filename} into {config.DEST_DB_DATABASE}...")
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                result = subprocess.run(command_str, stdin=f, stderr=subprocess.PIPE, text=True, check=True, shell=True)
+            logger.info(f"Successfully loaded {filename}")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Attempt {attempt}/{MAX_RETRIES} failed to load {filename}: {e.stderr}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+        except Exception as e:
+            logger.error(f"Attempt {attempt}/{MAX_RETRIES} unexpected error during SQL loading of {filename}: {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+    return False
+
+def run_migration(tables, state, suffix):
+    # Go up one directory from 'src' to the root directory, then into 'output'
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    raw_dir = os.path.join(base_dir, "output", "raw")
+    processed_dir = os.path.join(base_dir, "output", "processed")
+    
+    os.makedirs(raw_dir, exist_ok=True)
+    os.makedirs(processed_dir, exist_ok=True)
+
+    if not tables:
+        print("No tables found to migrate. See migration.log for details.")
+        return
+        
+    print(f"\nMigrating {len(tables)} tables (logging details to migration.log)...")
+    
+    processed_files = []
+    # Step 1 & 2: Dump and Process
+    for table in tqdm(tables, desc="Dumping and Processing", unit="table", leave=False):
+        raw_dump = os.path.join(raw_dir, f"{table}_raw.sql")
+        processed_dump = os.path.join(processed_dir, f"{table}{suffix}.sql")
+        
+        if table in state["processed_tables"]:
+            logger.info(f"Skipping dump/process for '{table}', already completed in previous session.")
+            processed_files.append((table, processed_dump))
+            continue
+        
+        if run_mysqldump(table, raw_dump):
+            process_dump_file(raw_dump, processed_dump, table, suffix)
+            processed_files.append((table, processed_dump))
+            state["processed_tables"].append(table)
+            save_state(state)
+        else:
+            logger.warning(f"Skipping processing for table '{table}' due to dump failure.")
+            
+    # Step 3: Load into destination
+    if create_destination_db() and processed_files:
+        # Count items that were already migrated previously
+        successful_migrations = sum(1 for table, _ in processed_files if table in state["migrated_tables"])
+        
+        for table, f in tqdm(processed_files, desc="Migrating to Destination", unit="file", leave=False):
+            if table in state["migrated_tables"]:
+                logger.info(f"Skipping migration for '{table}', already loaded in previous session.")
+                continue
+                
+            if load_sql_file(f):
+                successful_migrations += 1
+                state["migrated_tables"].append(table)
+                save_state(state)
+        
+        summary = f"Migration complete: {successful_migrations}/{len(tables)} tables migrated."
+        print(f"\n{summary}")
+        logger.info(summary)
+    else:
+        logger.error("Migration skipped or failed to connect to destination.")
+        print("\nMigration failed. See migration.log for details.")
+
+    logger.info("--- MIGRATION FINISHED ---")
+
+def choose_database():
+    """Connects to MySQL to list available databases and prompts user to select one."""
+    print(f"\nConnecting to Server {config.DB_HOST} to fetch databases...")
+    try:
+        conn = mysql.connector.connect(
+            host=config.DB_HOST,
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            connect_timeout=10
+        )
+        if conn.is_connected():
+            cursor = conn.cursor()
+            
+            # Attempt to increase max_connections (Requires SUPER privilege)
+            try:
+                cursor.execute("SET GLOBAL max_connections = 300")
+                logger.info("Successfully increased max_connections to 300.")
+            except Error as e:
+                logger.warning(f"Could not set max_connections (normal if lacking privileges): {e}")
+
+            cursor.execute("SHOW DATABASES")
+            databases = [row[0] for row in cursor.fetchall() if row[0] not in ('information_schema', 'mysql', 'performance_schema', 'sys')]
+            cursor.close()
+            conn.close()
+            
+            if not databases:
+                print("No user databases found on this server.")
+                return False
+                
+            print("\nAvailable Databases:")
+            for i, db in enumerate(databases, 1):
+                print(f"{i}. {db}")
+                
+            while True:
+                choice = input("\nSelect a database number: ").strip()
+                if choice.isdigit() and 1 <= int(choice) <= len(databases):
+                    selected_db = databases[int(choice) - 1]
+                    config.DB_DATABASE = selected_db
+                    print(f"Selected Database: {config.DB_DATABASE}")
+                    return True
+                else:
+                    print("Invalid choice. Please try again.")
+    except Error as e:
+        print(f"\nAuthentication or connection failed: {e}")
+        return False
+
+def migration_menu(suffix):
+    while True:
+        print(f"\n=============================================")
+        print(f"    MIGRATION OPTIONS (Database: {config.DB_DATABASE})")
+        print(f"    Table Suffix: {suffix}")
+        print(f"=============================================")
+        print("1. Specify table name pattern (Regular Expression)")
+        print("2. Specify exact table names (Comma-separated list)")
+        print("3. Detect and resume paused session")
+        print("4. Exit / Back to main menu")
+        print("=============================================")
+        
+        choice = input("Select an option (1-4): ").strip()
+        
+        if choice == '1':
+            pattern = input("Enter regular expression pattern (e.g., '^lib_.*'): ").strip()
+            if not pattern:
+                print("Pattern cannot be empty. Returning to menu.")
+                continue
+            
+            # Start fresh state for new query
+            state = {
+                "processed_tables": [], 
+                "migrated_tables": [], 
+                "pattern": pattern, 
+                "from_list": None, 
+                "suffix": suffix,
+                "db_host": config.DB_HOST,
+                "db_user": config.DB_USER,
+                "db_database": config.DB_DATABASE
+            }
+            save_state(state)
+            
+            logger.info(f"--- STARTING NEW MIGRATION (Pattern: {pattern}, DB: {config.DB_DATABASE}) ---")
+            tables = get_lib_tables(pattern=pattern)
+            run_migration(tables, state, suffix)
+            
+        elif choice == '2':
+            tables_input = input("Enter table names separated by commas: ").strip()
+            if not tables_input:
+                print("List cannot be empty. Returning to menu.")
+                continue
+            
+            table_list = [t.strip() for t in tables_input.split(',')]
+            
+            # Start fresh state for new query
+            state = {
+                "processed_tables": [], 
+                "migrated_tables": [], 
+                "pattern": None, 
+                "from_list": table_list, 
+                "suffix": suffix,
+                "db_host": config.DB_HOST,
+                "db_user": config.DB_USER,
+                "db_database": config.DB_DATABASE
+            }
+            save_state(state)
+            
+            logger.info(f"--- STARTING NEW MIGRATION (List: {table_list}, DB: {config.DB_DATABASE}) ---")
+            tables = get_lib_tables(from_list=table_list)
+            run_migration(tables, state, suffix)
+            
+        elif choice == '3':
+            if not os.path.exists(state_file):
+                print("No paused session found. Start a new migration.")
+                continue
+                
+            state = load_state()
+            if not state.get("processed_tables") and not state.get("migrated_tables"):
+                print("Paused session is empty. Start a new migration.")
+                continue
+                
+            logger.info(f"--- RESUMING PAUSED MIGRATION (DB: {config.DB_DATABASE}) ---")
+            
+            # Re-fetch the tables based on the saved state parameters
+            pattern = state.get("pattern")
+            from_list = state.get("from_list")
+            saved_suffix = state.get("suffix", suffix)
+            
+            if from_list:
+                print(f"Resuming previous session based on table list: {from_list}...")
+                tables = get_lib_tables(from_list=from_list) 
+            else:
+                p = pattern if pattern else "^lib_.*"
+                print(f"Resuming previous session based on pattern: '{p}'...")
+                tables = get_lib_tables(pattern=p) 
+            
+            run_migration(tables, state, saved_suffix)
+            
+        elif choice == '4':
+            print("Returning...")
+            break
+        else:
+            print("Invalid option. Please try again.")
+
+def main():
+    while True:
+        print("\n=============================================")
+        print("         PYTHON DATA MIGRATION               ")
+        print("=============================================")
+        print("1. PPISv 2 (Suffix: _v2)")
+        print("2. PPISv 3 (Suffix: _v3)")
+        print("3. Detect and resume paused session")
+        print("4. Exit")
+        print("=============================================")
+        
+        main_choice = input("Select an option (1-4): ").strip()
+        
+        if main_choice == '4':
+            print("Exiting...")
+            sys.exit(0)
+            
+        if main_choice == '3':
+            if not os.path.exists(state_file):
+                print("No paused session found. Start a new migration.")
+                continue
+                
+            state = load_state()
+            if not state.get("processed_tables") and not state.get("migrated_tables"):
+                print("Paused session is empty. Start a new migration.")
+                continue
+                
+            db_host = state.get("db_host")
+            db_user = state.get("db_user")
+            db_database = state.get("db_database")
+            saved_suffix = state.get("suffix")
+            
+            if not (db_host and db_user and db_database and saved_suffix):
+                print("Incomplete state file. Cannot resume directly. Please start normally.")
+                continue
+                
+            print(f"\n--- RESUMING PAUSED MIGRATION ---")
+            print(f"Host: {db_host}")
+            print(f"User: {db_user}")
+            print(f"Database: {db_database}")
+            
+            config.DB_HOST = db_host
+            config.DB_USER = db_user
+            config.DB_DATABASE = db_database
+            config.DB_PASSWORD = getpass.getpass("Password: ")
+            
+            try:
+                conn = mysql.connector.connect(
+                    host=config.DB_HOST,
+                    user=config.DB_USER,
+                    password=config.DB_PASSWORD,
+                    database=config.DB_DATABASE,
+                    connect_timeout=10
+                )
+                if conn.is_connected():
+                    conn.close()
+                    logger.info(f"--- RESUMING PAUSED MIGRATION (DB: {config.DB_DATABASE}) ---")
+                    
+                    pattern = state.get("pattern")
+                    from_list = state.get("from_list")
+                    
+                    if from_list:
+                        print(f"Resuming previous session based on table list: {from_list}...")
+                        tables = get_lib_tables(from_list=from_list) 
+                    else:
+                        p = pattern if pattern else "^lib_.*"
+                        print(f"Resuming previous session based on pattern: '{p}'...")
+                        tables = get_lib_tables(pattern=p) 
+                    
+                    run_migration(tables, state, saved_suffix)
+                else:
+                    print("Connection failed.")
+            except Error as e:
+                print(f"Authentication or connection failed: {e}")
+            
+            continue
+            
+        if main_choice not in ['1', '2']:
+            print("Invalid choice.")
+            continue
+            
+        suffix = '_v2' if main_choice == '1' else '_v3'
+        
+        # Determine Server list
+        if main_choice == '1':
+            servers = {
+                "1": ("10.255.9.104", "V2 Server A"),
+                "2": ("10.255.9.105", "V2 Server B (Example)")
+            }
+        else:
+            servers = {
+                "1": ("10.10.10.111", "V3 Server X (Example)"),
+                "2": ("10.10.10.112", "V3 Server Y (Example)")
+            }
+            
+        print(f"\n--- Select Server for PPIS{suffix.replace('_','')} ---")
+        for key, (ip, name) in servers.items():
+            print(f"{key}. {name} ({ip})")
+        print("0. Enter Custom Server IP")
+        
+        srv_choice = input("\nSelect server: ").strip()
+        
+        if srv_choice == '0':
+            config.DB_HOST = input("Enter MySQL Host IP: ").strip()
+        elif srv_choice in servers:
+            config.DB_HOST = servers[srv_choice][0]
+        else:
+            print("Invalid choice.")
+            continue
+            
+        print("\n--- Authentication ---")
+        config.DB_USER = input("Username: ").strip()
+        config.DB_PASSWORD = getpass.getpass("Password: ")
+        
+        if choose_database():
+            migration_menu(suffix)
+
+if __name__ == "__main__":
+    main()
