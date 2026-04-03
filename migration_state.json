@@ -517,7 +517,7 @@
     ],
     "pattern": "^lib",
     "from_list": null,
-    "suffix": "_v2",
+    "suffix": "_v3",
     "db_host": "localhost",
     "db_user": "jdfigueroa",
     "db_database": "pppp",
