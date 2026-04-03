@@ -87,10 +87,10 @@ If you choose to start a new migration, the script will guide you through:
 You can run the script without any user interaction by providing a JSON configuration file, which is perfect for scheduled tasks (like cron jobs or Windows Task Scheduler).
 
 ```bash
-python src/table_migration.py -c example_config.json
+python src/table_migration.py -c connection_config.json
 ```
 
-**Example `example_config.json`:**
+**Example `connection_config.json`:**
 ```json
 {
     "db_host": "10.255.9.104",
@@ -122,6 +122,7 @@ This script reads all `.sql` files in `output/processed/` and standardizes them 
 ```text
 python-data-migration-v2/
 ├── output/
+│   ├── archived/            # Archived processed mysqldump files
 │   ├── raw/                 # Intermediate storage for raw mysqldump files
 │   └── processed/           # Storage for schema-modified mysqldump files
 ├── src/
@@ -130,6 +131,6 @@ python-data-migration-v2/
 │   └── update.py            # Standalone SQL modification utility
 ├── migration_state.json     # Migration progress tracker (auto-generated)
 ├── migration.log            # Event log file (auto-generated)
-├── example_config.json      # Example JSON config for headless execution
+├── connection_config.json   # JSON config for headless execution
 ├── requirements.txt         # Python package requirements
 └── README.md                # This document
