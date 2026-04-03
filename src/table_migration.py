@@ -813,17 +813,17 @@ def main():
                 "1": ("10.255.9.100", "PPIS v2 Production"),
                 "2": ("10.255.9.104", "PPIS v2 CMS SWDI Production"),
                 "3": ("10.255.9.105", "PPIS v2 Staging"),
-                "4": ("localhost", "Localhost")
+                "4": ("127.0.0.1", "Localhost")
             }
         elif main_choice == '2':
             servers = {
                 "1": ("10.10.10.96", "PPIS v3 Staging"),
                 "2": ("10.255.9.111", "PPIS v3 Slave"),
-                "3": ("localhost", "Localhost")
+                "3": ("127.0.0.1", "Localhost")
             }
         else:
             servers = {
-                "1": ("localhost", "Localhost")
+                "1": ("127.0.0.1", "Localhost")
             }
             
         print(f"\n--- Select Server for PPIS{suffix.replace('_','')} ---")

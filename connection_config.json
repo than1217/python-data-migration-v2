@@ -7,7 +7,7 @@
     "dest_db_user": "jdfigueroa",
     "dest_db_password": "d0hw3lc0m3",
     "dest_db_database": "consultant_ods",
-    "suffix": "_v2",
-    "pattern": "^lib_doh",
+    "suffix": "_v4",
+    "pattern": "^lib_sex",
     "resume": false
 }
