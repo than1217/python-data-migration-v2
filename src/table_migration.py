@@ -5,6 +5,7 @@ import json
 import time
 import sys
 import getpass
+import argparse
 import mysql.connector
 import logging
 from mysql.connector import Error
@@ -117,7 +118,7 @@ def run_mysqldump(table, output_file):
     # --skip-opt prevents some default options that might hold locks/connections
     command_str = (
         f'"{config.MYSQLDUMP_PATH}" -h {config.DB_HOST} -u {config.DB_USER} --password="{config.DB_PASSWORD}" '
-        f'--no-tablespaces --skip-lock-tables --skip-add-locks --set-gtid-purged=OFF --single-transaction --quick {config.DB_DATABASE} {table}'
+        f'--no-tablespaces --skip-lock-tables --skip-add-locks --set-gtid-purged=OFF --single-transaction --quick --max_allowed_packet=10G {config.DB_DATABASE} {table}'
     )
     
     logger.info(f"Dumping table '{table}' to {output_file}...")
@@ -142,14 +143,10 @@ def run_mysqldump(table, output_file):
 
 def process_dump_file(input_file, output_file, table_name, suffix):
     """Reads the raw SQL dump, updates the table name, engine, and collation, and saves it to a new file"""
-    logger.info(f"Processing table '{table_name}' dump...")
+    logger.info(f"Processing table '{table_name}' dump line by line to handle large files...")
     try:
-        with open(input_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-            
-        # 1. Add suffix to the table name
         new_table_name = f"{table_name}{suffix}"
-        content = re.sub(f"`{table_name}`", f"`{new_table_name}`", content)
+        table_name_pattern = re.compile(rf"`{table_name}`")
 
         # 2. Update Table-level options (ENGINE, CHARSET, COLLATE, ROW_FORMAT)
         def update_table_options(match):
@@ -177,11 +174,11 @@ def process_dump_file(input_file, output_file, table_name, suffix):
                 
             return f") {options};"
 
-        content = re.sub(r'\)\s*(ENGINE\s*=[^;]+);', update_table_options, content, flags=re.IGNORECASE)
+        table_options_pattern = re.compile(r'\)\s*(ENGINE\s*=[^;]+);', flags=re.IGNORECASE)
             
         # 3. Replace Column-level character sets and collations
-        content = re.sub(r'CHARACTER SET\s+\w+', 'CHARACTER SET utf8mb4', content, flags=re.IGNORECASE)
-        content = re.sub(r'COLLATE\s+\w+', 'COLLATE utf8mb4_0900_ai_ci', content, flags=re.IGNORECASE)
+        charset_pattern = re.compile(r'CHARACTER SET\s+\w+', flags=re.IGNORECASE)
+        collate_pattern = re.compile(r'COLLATE\s+\w+', flags=re.IGNORECASE)
         
         def inject_charset_collate(match):
             col_def = match.group(0)
@@ -189,11 +186,24 @@ def process_dump_file(input_file, output_file, table_name, suffix):
                 return col_def
             return match.group(1) + " CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci" + match.group(2)
 
-        pattern = r'(`[^`]+`\s+(?:varchar\([^)]+\)|char\([^)]+\)|enum\([^)]+\)|text|longtext|mediumtext|tinytext))([^,\n]*)'
-        content = re.sub(pattern, inject_charset_collate, content, flags=re.IGNORECASE)
+        column_pattern = re.compile(r'(`[^`]+`\s+(?:varchar\([^)]+\)|char\([^)]+\)|enum\([^)]+\)|text|longtext|mediumtext|tinytext))([^,\n]*)', flags=re.IGNORECASE)
         
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(content)
+        with open(input_file, 'r', encoding='utf-8') as f_in, open(output_file, 'w', encoding='utf-8') as f_out:
+            for line in f_in:
+                # 1. Replace the table name with the suffixed table name.
+                if f"`{table_name}`" in line:
+                    line = table_name_pattern.sub(f"`{new_table_name}`", line)
+                
+                # Skip heavy regex for INSERT statements which form the bulk of data in huge tables
+                if not line.startswith('INSERT INTO'):
+                    if line.lstrip().startswith(')') and 'ENGINE=' in line.upper():
+                        line = table_options_pattern.sub(update_table_options, line)
+                    elif line.lstrip().startswith('`'):
+                        line = charset_pattern.sub('CHARACTER SET utf8mb4', line)
+                        line = collate_pattern.sub('COLLATE utf8mb4_0900_ai_ci', line)
+                        line = column_pattern.sub(inject_charset_collate, line)
+
+                f_out.write(line)
         logger.info(f"Successfully processed table '{table_name}'.")
             
     except Exception as e:
@@ -229,7 +239,7 @@ def load_sql_file(filepath):
     # Added --connect_timeout=10 to explicitly manage connection timeouts and avoid hanging connections.
     # Added -e "source <file>" to run the script and immediately exit, ensuring the connection drops.
     command_str = (
-        f'"{config.MYSQL_PATH}" --connect_timeout=10 -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
+        f'"{config.MYSQL_PATH}" --connect_timeout=10 --max_allowed_packet=10G -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
         f'{config.DEST_DB_DATABASE} -e "source {filepath}"'
     )
 
@@ -255,10 +265,13 @@ def load_sql_file(filepath):
     return False
 
 def run_migration(tables, state, suffix):
+    # Determine the folder name (e.g. 'v2', 'v3', or a custom name like 'v4') from the suffix.
+    folder_name = suffix.strip('_') if suffix else 'v2'
+
     # Go up one directory from 'src' to the root directory, then into 'output'
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    raw_dir = os.path.join(base_dir, "output", "raw")
-    processed_dir = os.path.join(base_dir, "output", "processed")
+    raw_dir = os.path.join(base_dir, "output", "raw", folder_name)
+    processed_dir = os.path.join(base_dir, "output", "processed", folder_name)
     
     os.makedirs(raw_dir, exist_ok=True)
     os.makedirs(processed_dir, exist_ok=True)
@@ -273,7 +286,7 @@ def run_migration(tables, state, suffix):
     processed_files = []
     # Step 1 & 2: Dump and Process
     for table in tqdm(tables, desc="Dumping and Processing", unit="table", leave=False):
-        raw_dump = os.path.join(raw_dir, f"{table}_raw.sql")
+        raw_dump = os.path.join(raw_dir, f"{table}_raw{suffix}.sql")
         processed_dump = os.path.join(processed_dir, f"{table}{suffix}.sql")
         
         if table in state["processed_tables"]:
@@ -307,6 +320,12 @@ def run_migration(tables, state, suffix):
         summary = f"Migration complete: {successful_migrations}/{len(tables)} tables migrated."
         print(f"\n{summary}")
         logger.info(summary)
+        
+        # Reset state after a completely successful run where all expected tables migrated
+        if successful_migrations == len(tables):
+            logger.info("All tables migrated successfully. Resetting migration state.")
+            save_state({"processed_tables": [], "migrated_tables": [], "pattern": None, "from_list": None})
+            
     else:
         logger.error("Migration skipped or failed to connect to destination.")
         print("\nMigration failed. See migration.log for details.")
@@ -417,6 +436,102 @@ def choose_destination_database():
             return True
         return False
 
+def run_headless(config_file):
+    """Runs the migration non-interactively using a JSON configuration file."""
+    print(f"\n=============================================")
+    print(f"      STARTING HEADLESS MIGRATION JOB        ")
+    print(f"=============================================")
+    print(f"Loading configuration from: {config_file}")
+
+    if not os.path.exists(config_file):
+        logger.error(f"Configuration file '{config_file}' not found.")
+        print(f"Configuration file '{config_file}' not found.")
+        return
+
+    try:
+        with open(config_file, 'r') as f:
+            cfg = json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading configuration file: {e}")
+        print(f"Error loading configuration file: {e}")
+        return
+
+    # Extract source config
+    config.DB_HOST = cfg.get('db_host', config.DB_HOST)
+    config.DB_USER = cfg.get('db_user', config.DB_USER)
+    config.DB_PASSWORD = cfg.get('db_password', config.DB_PASSWORD)
+    config.DB_DATABASE = cfg.get('db_database', config.DB_DATABASE)
+
+    # Extract destination config
+    config.DEST_DB_HOST = cfg.get('dest_db_host', config.DEST_DB_HOST)
+    config.DEST_DB_USER = cfg.get('dest_db_user', config.DEST_DB_USER)
+    config.DEST_DB_PASSWORD = cfg.get('dest_db_password', config.DEST_DB_PASSWORD)
+    config.DEST_DB_DATABASE = cfg.get('dest_db_database', config.DEST_DB_DATABASE)
+
+    suffix = cfg.get('suffix', '')
+    pattern = cfg.get('pattern')
+    table_list_str = cfg.get('table_list')
+    table_list = None
+    if table_list_str:
+        if isinstance(table_list_str, str):
+            table_list = [t.strip() for t in table_list_str.split(',') if t.strip()]
+        elif isinstance(table_list_str, list):
+            table_list = table_list_str
+
+    if not pattern and not table_list:
+        logger.error("Configuration file must specify 'pattern' or 'table_list'.")
+        print("Configuration file must specify 'pattern' or 'table_list'.")
+        return
+
+    # Optional: read whether to clear previous state or resume
+    resume = cfg.get('resume', True)
+    
+    print(f"\n[Configuration Loaded]")
+    print(f"Source DB: {config.DB_HOST} -> {config.DB_DATABASE}")
+    print(f"Dest DB:   {config.DEST_DB_HOST} -> {config.DEST_DB_DATABASE}")
+    print(f"Suffix:    '{suffix}'")
+    
+    if resume:
+        print(f"Resume Mode: Enabled (will skip already processed tables)")
+        state = load_state()
+    else:
+        print(f"Resume Mode: Disabled (starting fresh)")
+        state = {"processed_tables": [], "migrated_tables": []}
+
+    current_state = {
+        "processed_tables": state.get("processed_tables", []), 
+        "migrated_tables": state.get("migrated_tables", []), 
+        "pattern": pattern, 
+        "from_list": table_list, 
+        "suffix": suffix,
+        "db_host": config.DB_HOST,
+        "db_user": config.DB_USER,
+        "db_database": config.DB_DATABASE,
+        "dest_db_host": config.DEST_DB_HOST,
+        "dest_db_user": config.DEST_DB_USER,
+        "dest_db_database": config.DEST_DB_DATABASE
+    }
+    save_state(current_state)
+    
+    print(f"\n[Fetching Tables]")
+    if table_list:
+        print(f"Using explicit table list ({len(table_list)} tables provided)...")
+        logger.info(f"--- STARTING HEADLESS MIGRATION (List: {table_list}, DB: {config.DB_DATABASE}) ---")
+        tables = get_lib_tables(from_list=table_list)
+    else:
+        print(f"Using regex pattern: '{pattern}'...")
+        logger.info(f"--- STARTING HEADLESS MIGRATION (Pattern: {pattern}, DB: {config.DB_DATABASE}) ---")
+        tables = get_lib_tables(pattern=pattern)
+        
+    print(f"-> Found {len(tables)} matching tables in source database.")
+    
+    print(f"\n[Starting Migration]")
+    run_migration(tables, current_state, suffix)
+    
+    print(f"\n=============================================")
+    print(f"      HEADLESS MIGRATION JOB COMPLETED       ")
+    print(f"=============================================")
+
 def migration_menu(suffix):
     while True:
         print(f"\n=============================================")
@@ -522,24 +637,33 @@ def migration_menu(suffix):
             print("Invalid option. Please try again.")
 
 def main():
+    parser = argparse.ArgumentParser(description="Python Data Migration Utility")
+    parser.add_argument('-c', '--config', help="Path to JSON configuration file for scheduled/headless execution")
+    args = parser.parse_args()
+
+    if args.config:
+        run_headless(args.config)
+        return
+
     while True:
         print("\n=============================================")
         print("         PYTHON DATA MIGRATION               ")
         print("=============================================")
         print("1. PPISv 2 (Suffix: _v2)")
         print("2. PPISv 3 (Suffix: _v3)")
-        print("3. Restore database from SQL file(s)")
-        print("4. Detect and resume paused session")
-        print("5. Exit")
+        print("3. Custom Migration (Input custom suffix)")
+        print("4. Restore database from SQL file(s)")
+        print("5. Resume paused session")
+        print("6. Exit")
         print("=============================================")
         
-        main_choice = input("Select an option (1-5): ").strip()
+        main_choice = input("Select an option (1-6): ").strip()
         
-        if main_choice == '5':
+        if main_choice == '6':
             print("Exiting...")
             sys.exit(0)
             
-        if main_choice == '3':
+        if main_choice == '4':
             print("\n--- RESTORE DATABASE FROM SQL ---")
             
             sql_path = input("Enter the directory path containing the SQL files: ").strip()
@@ -588,7 +712,7 @@ def main():
             print(f"\nRestore complete: {successful_restores}/{len(sql_files)} files restored.")
             continue
             
-        if main_choice == '4':
+        if main_choice == '5':
             if not os.path.exists(state_file):
                 print("No paused session found. Start a new migration.")
                 continue
@@ -672,11 +796,16 @@ def main():
             
             continue
             
-        if main_choice not in ['1', '2']:
+        if main_choice not in ['1', '2', '3']:
             print("Invalid choice.")
             continue
             
-        suffix = '_v2' if main_choice == '1' else '_v3'
+        if main_choice == '1':
+            suffix = '_v2'
+        elif main_choice == '2':
+            suffix = '_v3'
+        else:
+            suffix = input("Enter custom suffix (e.g., '_v4'): ").strip()
         
         # Determine Server list
         if main_choice == '1':
@@ -686,11 +815,15 @@ def main():
                 "3": ("10.255.9.105", "PPIS v2 Staging"),
                 "4": ("localhost", "Localhost")
             }
-        else:
+        elif main_choice == '2':
             servers = {
                 "1": ("10.10.10.96", "PPIS v3 Staging"),
                 "2": ("10.255.9.111", "PPIS v3 Slave"),
                 "3": ("localhost", "Localhost")
+            }
+        else:
+            servers = {
+                "1": ("localhost", "Localhost")
             }
             
         print(f"\n--- Select Server for PPIS{suffix.replace('_','')} ---")

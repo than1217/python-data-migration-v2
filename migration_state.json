@@ -2,12 +2,5 @@
     "processed_tables": [],
     "migrated_tables": [],
     "pattern": null,
-    "from_list": null,
-    "suffix": null,
-    "db_host": null,
-    "db_user": null,
-    "db_database": null,
-    "dest_db_host": null,
-    "dest_db_user": null,
-    "dest_db_database": null
+    "from_list": null
 }

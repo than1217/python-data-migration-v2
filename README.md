@@ -53,6 +53,10 @@ The database connections and executable paths are defined in `src/config.py`. Yo
 
 ## Usage
 
+The application can be run interactively or non-interactively (headless mode) for scheduled jobs.
+
+### Interactive Mode
+
 Start the interactive migration script by running:
 
 ```bash
@@ -63,11 +67,46 @@ python src/main.py
 
 1. **PPISv 2 (Suffix: _v2)**: Start a migration that appends `_v2` to all migrated tables.
 2. **PPISv 3 (Suffix: _v3)**: Start a migration that appends `_v3` to all migrated tables.
-3. **Restore database from SQL file(s)**: Load existing `.sql` files from a specified directory into a destination database.
-4. **Detect and resume paused session**: Read the `migration_state.json` file and continue from where a previous run left off.
-5. **Exit**: Terminate the application.
+3. **Custom Migration (Input custom suffix)**: Start a migration and prompt for a custom suffix string (e.g., `_v4`).
+4. **Restore database from SQL file(s)**: Load existing `.sql` files from a specified directory into a destination database.
+5. **Resume paused session**: Read the `migration_state.json` file and seamlessly continue from where a previous run left off.
+6. **Exit**: Terminate the application.
 
-When migrating (Option 1 or 2), you'll be guided through setting source and destination database credentials interactively, selecting tables, and watching the progress via progress bars.
+**Interactive Migration Flow (Options 1, 2 & 3):**
+If you choose to start a new migration, the script will guide you through:
+1. **Server Selection**: Choose from predefined server IPs or enter a custom one.
+2. **Authentication**: Provide credentials for the Source and Destination servers.
+3. **Database Selection**: Interactively select the source database and the destination database from a list (with the option to create a new destination database).
+4. **Target Selection Menu**: Choose how to select tables:
+   - **Regular Expression**: e.g., `^lib_.*`
+   - **Exact Table Names**: Comma-separated list of tables
+   - **Resume Paused Session**: Resume a previously interrupted session with the same parameters
+
+### Scheduled Job (Headless Mode)
+
+You can run the script without any user interaction by providing a JSON configuration file, which is perfect for scheduled tasks (like cron jobs or Windows Task Scheduler).
+
+```bash
+python src/main.py -c example_config.json
+```
+
+**Example `example_config.json`:**
+```json
+{
+    "db_host": "10.255.9.104",
+    "db_user": "source_username",
+    "db_password": "source_password",
+    "db_database": "pppp",
+    "dest_db_host": "10.10.10.133",
+    "dest_db_user": "dest_username",
+    "dest_db_password": "dest_password",
+    "dest_db_database": "consultant_ods",
+    "suffix": "_v3",
+    "pattern": "^lib_.*",
+    "resume": true
+}
+```
+*Note: You can specify either `pattern` (regex string) or `table_list` (comma-separated string e.g., `"table1,table2"` or JSON array `["table1", "table2"]`). If `resume` is `true`, it will skip tables already tracked in `migration_state.json`.*
 
 ### Standalone SQL Updater
 
@@ -83,14 +122,14 @@ This script reads all `.sql` files in `output/processed/` and standardizes them 
 ```text
 python-data-migration-v2/
 ├── output/
-│   ├── raw/             # Intermediate storage for raw mysqldump files
-│   └── processed/       # Storage for schema-modified mysqldump files
+│   ├── raw/                 # Intermediate storage for raw mysqldump files
+│   └── processed/           # Storage for schema-modified mysqldump files
 ├── src/
-│   ├── config.py        # Configuration variables
-│   ├── main.py          # Primary application entrypoint
-│   └── update.py        # Standalone SQL modification utility
-├── migration_state.json # Migration progress tracker (auto-generated)
-├── migration.log        # Event log file (auto-generated)
-├── requirements.txt     # Python package requirements
-└── README.md            # This document
-```
+│   ├── config.py            # Default configuration variables
+│   ├── main.py              # Primary application entrypoint
+│   └── update.py            # Standalone SQL modification utility
+├── migration_state.json     # Migration progress tracker (auto-generated)
+├── migration.log            # Event log file (auto-generated)
+├── example_config.json      # Example JSON config for headless execution
+├── requirements.txt         # Python package requirements
+└── README.md                # This document
