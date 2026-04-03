@@ -1,4 +1,5 @@
 import os
+import sys
 
 # Default Source Database Configuration
 # These are used as defaults if not explicitly set via environment variables.
@@ -8,15 +9,17 @@ DB_DATABASE = os.environ.get('DB_DATABASE', 'pppp')
 DB_USER = os.environ.get('DB_USER', 'jfiguero')
 DB_PASSWORD = os.environ.get('DB_PASSWORD', 'jfigueroJF9(')
 
+is_windows = sys.platform.startswith('win')
+
 # System Executable Paths
 # MYSQLDUMP_PATH: Full system path to the 'mysqldump' executable.
 # Example for MySQL Workbench on Windows: "C:\\Program Files\\MySQL\\MySQL Workbench 8.0 CE\\mysqldump.exe"
 # Example for XAMPP on Windows: "C:\\xampp\\mysql\\bin\\mysqldump.exe"
 # NOTE: If passing absolute paths on Windows, ensure you use double backslashes (\\).
-MYSQLDUMP_PATH = os.environ.get('MYSQLDUMP_PATH', "mysqldump.exe")
+MYSQLDUMP_PATH = os.environ.get('MYSQLDUMP_PATH', "mysqldump.exe" if is_windows else "mysqldump")
 
 # MYSQL_PATH: Full system path to the 'mysql' executable used for importing.
-MYSQL_PATH = os.environ.get('MYSQL_PATH', "mysql.exe")
+MYSQL_PATH = os.environ.get('MYSQL_PATH', "mysql.exe" if is_windows else "mysql")
 
 # Default Destination Database Configuration
 # These are used as default inputs for the destination server during interactive and headless runs.

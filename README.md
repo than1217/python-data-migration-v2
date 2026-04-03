@@ -48,8 +48,8 @@ The database connections and executable paths are defined in `src/config.py`. Yo
 - `DEST_DB_PASSWORD`
 
 **Executables:**
-- `MYSQLDUMP_PATH` (default: `mysqldump.exe`)
-- `MYSQL_PATH` (default: `mysql.exe`)
+- `MYSQLDUMP_PATH` (default: `mysqldump.exe` on Windows, `mysqldump` on Linux/macOS)
+- `MYSQL_PATH` (default: `mysql.exe` on Windows, `mysql` on Linux/macOS)
 
 ## Usage
 
