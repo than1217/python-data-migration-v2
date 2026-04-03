@@ -60,7 +60,7 @@ The application can be run interactively or non-interactively (headless mode) fo
 Start the interactive migration script by running:
 
 ```bash
-python src/main.py
+python src/table_migration.py
 ```
 
 ### Main Menu Options:
@@ -87,7 +87,7 @@ If you choose to start a new migration, the script will guide you through:
 You can run the script without any user interaction by providing a JSON configuration file, which is perfect for scheduled tasks (like cron jobs or Windows Task Scheduler).
 
 ```bash
-python src/main.py -c example_config.json
+python src/table_migration.py -c example_config.json
 ```
 
 **Example `example_config.json`:**
@@ -126,7 +126,7 @@ python-data-migration-v2/
 │   └── processed/           # Storage for schema-modified mysqldump files
 ├── src/
 │   ├── config.py            # Default configuration variables
-│   ├── main.py              # Primary application entrypoint
+│   ├── table_migration.py   # Primary application entrypoint
 │   └── update.py            # Standalone SQL modification utility
 ├── migration_state.json     # Migration progress tracker (auto-generated)
 ├── migration.log            # Event log file (auto-generated)
