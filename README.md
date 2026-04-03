@@ -4,6 +4,7 @@ A robust, Python-based MySQL table migration utility designed to migrate databas
 
 ## Features
 
+- **Cross-Platform Support**: Automatically detects Windows or Linux/macOS environments to use the correct default MySQL executables (`mysql`/`mysqldump`).
 - **Interactive CLI Menu**: Easily select target databases, source patterns, and migration strategies through an interactive console interface.
 - **Smart Schema Adjustments**:
   - Automatically appends configurable suffixes (e.g., `_v2`, `_v3`) to table names.
@@ -122,9 +123,8 @@ This script reads all `.sql` files in `output/processed/` and standardizes them 
 ```text
 python-data-migration-v2/
 ├── output/
-│   ├── archived/            # Archived processed mysqldump files
-│   ├── raw/                 # Intermediate storage for raw mysqldump files
-│   └── processed/           # Storage for schema-modified mysqldump files
+│   ├── raw/                 # Intermediate storage for raw mysqldump files (e.g., raw/v2, raw/v3)
+│   └── processed/           # Storage for schema-modified mysqldump files (e.g., processed/v2, processed/v3)
 ├── src/
 │   ├── config.py            # Default configuration variables
 │   ├── table_migration.py   # Primary application entrypoint
