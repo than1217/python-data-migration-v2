@@ -1,5 +1,9 @@
 import os
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (if it exists)
+load_dotenv()
 
 # Default Source Database Configuration
 # These are used as defaults if not explicitly set via environment variables.

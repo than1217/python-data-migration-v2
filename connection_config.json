@@ -1,13 +1,11 @@
 {
-    "db_host": "localhost",
+    "db_host": "127.0.0.1",
     "db_user": "jdfigueroa",
-    "db_password": "d0hw3lc0m3",
     "db_database": "pppp",
-    "dest_db_host": "localhost",
+    "dest_db_host": "127.0.0.1",
     "dest_db_user": "jdfigueroa",
-    "dest_db_password": "d0hw3lc0m3",
     "dest_db_database": "consultant_ods",
-    "suffix": "_v4",
+    "suffix": "_v6",
     "pattern": "^lib_sex",
     "resume": false
 }

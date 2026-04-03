@@ -117,7 +117,7 @@ def run_mysqldump(table, output_file):
     # Added explicit connection closure parameters where applicable to mysqldump
     # --skip-opt prevents some default options that might hold locks/connections
     command_str = (
-        f'"{config.MYSQLDUMP_PATH}" -h {config.DB_HOST} -u {config.DB_USER} --password="{config.DB_PASSWORD}" '
+        f'"{config.MYSQLDUMP_PATH}" --protocol=TCP -h {config.DB_HOST} -u {config.DB_USER} --password="{config.DB_PASSWORD}" '
         f'--no-tablespaces --skip-lock-tables --skip-add-locks --set-gtid-purged=OFF --single-transaction --quick --max_allowed_packet=1G {config.DB_DATABASE} {table}'
     )
     
@@ -239,7 +239,7 @@ def load_sql_file(filepath):
     # Added --connect_timeout=10 to explicitly manage connection timeouts and avoid hanging connections.
     # Added -e "source <file>" to run the script and immediately exit, ensuring the connection drops.
     command_str = (
-        f'"{config.MYSQL_PATH}" --connect_timeout=10 --max_allowed_packet=1G -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
+        f'"{config.MYSQL_PATH}" --protocol=TCP --connect_timeout=10 --max_allowed_packet=1G -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
         f'{config.DEST_DB_DATABASE} -e "source {filepath}"'
     )
 
@@ -458,12 +458,16 @@ def run_headless(config_file):
 
     # Extract source config
     config.DB_HOST = cfg.get('db_host', config.DB_HOST)
+    if config.DB_HOST == 'localhost':
+        config.DB_HOST = '127.0.0.1'
     config.DB_USER = cfg.get('db_user', config.DB_USER)
     config.DB_PASSWORD = cfg.get('db_password', config.DB_PASSWORD)
     config.DB_DATABASE = cfg.get('db_database', config.DB_DATABASE)
 
     # Extract destination config
     config.DEST_DB_HOST = cfg.get('dest_db_host', config.DEST_DB_HOST)
+    if config.DEST_DB_HOST == 'localhost':
+        config.DEST_DB_HOST = '127.0.0.1'
     config.DEST_DB_USER = cfg.get('dest_db_user', config.DEST_DB_USER)
     config.DEST_DB_PASSWORD = cfg.get('dest_db_password', config.DEST_DB_PASSWORD)
     config.DEST_DB_DATABASE = cfg.get('dest_db_database', config.DEST_DB_DATABASE)
