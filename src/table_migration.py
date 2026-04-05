@@ -244,10 +244,15 @@ def load_sql_file(filepath):
     # Convert backslashes to forward slashes to prevent MySQL escape character issues with paths
     mysql_filepath = filepath.replace('\\', '/')
     
-    # Prepend SET SESSION sql_mode='' to accept 0000-00-00 00:00:00 datetime formats
+    # Create a temporary runner script to bypass -e limitations when chaining SOURCE with other statements
+    temp_runner = os.path.join(base_dir, f"temp_run_{int(time.time())}.sql")
+    with open(temp_runner, "w", encoding="utf-8") as tr:
+        tr.write("SET SESSION sql_mode='';\n")
+        tr.write(f"SOURCE {mysql_filepath}\n")
+    
     command_str = (
         f'"{config.MYSQL_PATH}" --protocol=TCP --connect_timeout=10 --max_allowed_packet=1G -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
-        f'{config.DEST_DB_DATABASE} -e "SET SESSION sql_mode=\'\'; source {mysql_filepath}"'
+        f'{config.DEST_DB_DATABASE} < "{temp_runner}"'
     )
 
     logger.info("Loading %s into %s...", filename, config.DEST_DB_DATABASE)
@@ -260,6 +265,8 @@ def load_sql_file(filepath):
             # Add a small delay to avoid overwhelming the MySQL server with too many rapid connections
             time.sleep(1)
             
+            if os.path.exists(temp_runner):
+                os.remove(temp_runner)
             return True
         except subprocess.CalledProcessError as e:
             logger.error("Attempt %s/%s failed to load %s: %s", attempt, MAX_RETRIES, filename, e.stderr)
@@ -269,6 +276,9 @@ def load_sql_file(filepath):
             logger.error("Attempt %s/%s unexpected error during SQL loading of %s: %s", attempt, MAX_RETRIES, filename, e)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
+                
+    if os.path.exists(temp_runner):
+        os.remove(temp_runner)
     return False
 
 # pylint: disable=too-many-locals
@@ -723,10 +733,13 @@ def main():
                 continue
                 
             successful_restores = 0
-            for file in tqdm(sql_files, desc="Restoring SQL files", unit="file", leave=False):
+            pbar = tqdm(sql_files, desc="Restoring SQL files", unit="file", leave=True)
+            for file in pbar:
+                pbar.set_postfix(current_file=file)
                 filepath = os.path.join(sql_path, file)
                 if load_sql_file(filepath):
                     successful_restores += 1
+            pbar.close()
                     
             print(f"\nRestore complete: {successful_restores}/{len(sql_files)} files restored.")
             continue
