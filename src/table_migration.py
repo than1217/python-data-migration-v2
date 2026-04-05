@@ -1,16 +1,16 @@
 import os
 import subprocess
 import re
+import logging
 import json
 import time
 import sys
 import getpass
 import argparse
 import mysql.connector
-import logging
+from tqdm import tqdm
 from mysql.connector import Error
 import config
-from tqdm import tqdm
 
 # Set up logging to migration.log
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,24 +29,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def load_state():
+    """Loads the current migration state from a JSON file."""
     if os.path.exists(state_file):
         try:
             with open(state_file, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            logger.error(f"Error loading state file: {e}")
+            logger.error("Error loading state file: %s", e)
     return {"processed_tables": [], "migrated_tables": [], "pattern": None, "from_list": None}
 
 def save_state(state):
+    """Saves the current migration state to a JSON file."""
     try:
         with open(state_file, 'w') as f:
             json.dump(state, f, indent=4)
     except Exception as e:
-        logger.error(f"Error saving state file: {e}")
+        logger.error("Error saving state file: %s", e)
 
 def get_lib_tables(pattern=None, from_list=None):
     """Connects to MySQL and retrieves tables based on a pattern or a specific list."""
-    logger.info(f"Connecting to MySQL Server {config.DB_HOST}...")
+    logger.info("Connecting to MySQL Server %s...", config.DB_HOST)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             conn = mysql.connector.connect(
@@ -57,7 +59,7 @@ def get_lib_tables(pattern=None, from_list=None):
                 connect_timeout=10
             )
             if conn.is_connected():
-                logger.info(f"Successfully connected to database '{config.DB_DATABASE}'.")
+                logger.info("Successfully connected to database '%s'.", config.DB_DATABASE)
                 
                 cursor = conn.cursor()
                 cursor.execute("SHOW TABLES")
@@ -95,7 +97,7 @@ def get_lib_tables(pattern=None, from_list=None):
                                 break
                         
                         if is_old_year:
-                            logger.info(f"Skipping table '{table_name}' (reason: year below 2020)")
+                            logger.info("Skipping table '%s' (reason: year below 2020)", table_name)
                             continue
                         
                         tables.append(table_name)
@@ -105,7 +107,7 @@ def get_lib_tables(pattern=None, from_list=None):
                 return tables
                 
         except Error as e:
-            logger.error(f"Attempt {attempt}/{MAX_RETRIES} - Error connecting to MySQL: {e}")
+            logger.error("Attempt %s/%s - Error connecting to MySQL: %s", attempt, MAX_RETRIES, e)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
     
@@ -121,7 +123,7 @@ def run_mysqldump(table, output_file):
         f'--no-tablespaces --skip-lock-tables --skip-add-locks --set-gtid-purged=OFF --single-transaction --quick --max_allowed_packet=1G {config.DB_DATABASE} {table}'
     )
     
-    logger.info(f"Dumping table '{table}' to {output_file}...")
+    logger.info("Dumping table '%s' to %s...", table, output_file)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             with open(output_file, "w", encoding="utf-8") as f:
@@ -132,18 +134,18 @@ def run_mysqldump(table, output_file):
             
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Attempt {attempt}/{MAX_RETRIES} failed to dump table '{table}': {e.stderr}")
+            logger.error("Attempt %s/%s failed to dump table '%s': %s", attempt, MAX_RETRIES, table, e.stderr)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
         except Exception as e:
-            logger.error(f"Attempt {attempt}/{MAX_RETRIES} unexpected error during mysqldump for '{table}': {e}")
+            logger.error("Attempt %s/%s unexpected error during mysqldump for '%s': %s", attempt, MAX_RETRIES, table, e)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
     return False
 
 def process_dump_file(input_file, output_file, table_name, suffix):
     """Reads the raw SQL dump, updates the table name, engine, and collation, and saves it to a new file"""
-    logger.info(f"Processing table '{table_name}' dump line by line to handle large files...")
+    logger.info("Processing table '%s' dump line by line to handle large files...", table_name)
     try:
         new_table_name = f"{table_name}{suffix}"
         table_name_pattern = re.compile(rf"`{table_name}`")
@@ -204,14 +206,14 @@ def process_dump_file(input_file, output_file, table_name, suffix):
                         line = column_pattern.sub(inject_charset_collate, line)
 
                 f_out.write(line)
-        logger.info(f"Successfully processed table '{table_name}'.")
+        logger.info("Successfully processed table '%s'.", table_name)
             
     except Exception as e:
-        logger.error(f"Error processing dump file for '{table_name}': {e}")
+        logger.error("Error processing dump file for '%s': %s", table_name, e)
 
 def create_destination_db():
     """Connects to MySQL and creates the destination database if it doesn't exist."""
-    logger.info(f"Connecting to destination server {config.DEST_DB_HOST}...")
+    logger.info("Connecting to destination server %s...", config.DEST_DB_HOST)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             conn = mysql.connector.connect(
@@ -223,12 +225,12 @@ def create_destination_db():
             if conn.is_connected():
                 cursor = conn.cursor()
                 cursor.execute(f"CREATE DATABASE IF NOT EXISTS {config.DEST_DB_DATABASE}")
-                logger.info(f"Database '{config.DEST_DB_DATABASE}' ensured on destination.")
+                logger.info("Database '%s' ensured on destination.", config.DEST_DB_DATABASE)
                 cursor.close()
                 conn.close()
                 return True
         except Error as e:
-            logger.error(f"Attempt {attempt}/{MAX_RETRIES} - Error creating destination DB: {e}")
+            logger.error("Attempt %s/%s - Error creating destination DB: %s", attempt, MAX_RETRIES, e)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
     return False
@@ -243,35 +245,37 @@ def load_sql_file(filepath):
         f'{config.DEST_DB_DATABASE} -e "source {filepath}"'
     )
 
-    logger.info(f"Loading {filename} into {config.DEST_DB_DATABASE}...")
+    logger.info("Loading %s into %s...", filename, config.DEST_DB_DATABASE)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             # Add explicit close/kill for the process after run to ensure clean disconnect
             result = subprocess.run(command_str, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, check=True, shell=True)
-            logger.info(f"Successfully loaded {filename}")
+            logger.info("Successfully loaded %s", filename)
             
             # Add a small delay to avoid overwhelming the MySQL server with too many rapid connections
             time.sleep(1)
             
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Attempt {attempt}/{MAX_RETRIES} failed to load {filename}: {e.stderr}")
+            logger.error("Attempt %s/%s failed to load %s: %s", attempt, MAX_RETRIES, filename, e.stderr)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
         except Exception as e:
-            logger.error(f"Attempt {attempt}/{MAX_RETRIES} unexpected error during SQL loading of {filename}: {e}")
+            logger.error("Attempt %s/%s unexpected error during SQL loading of %s: %s", attempt, MAX_RETRIES, filename, e)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
     return False
 
+# pylint: disable=too-many-locals
 def run_migration(tables, state, suffix):
+    """Run the migration process for the given tables."""
     # Determine the folder name (e.g. 'v2', 'v3', or a custom name like 'v4') from the suffix.
     folder_name = suffix.strip('_') if suffix else 'v2'
 
     # Go up one directory from 'src' to the root directory, then into 'output'
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    raw_dir = os.path.join(base_dir, "output", "raw", folder_name)
-    processed_dir = os.path.join(base_dir, "output", "processed", folder_name)
+    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    raw_dir = os.path.join(project_dir, "output", "raw", folder_name)
+    processed_dir = os.path.join(project_dir, "output", "processed", folder_name)
     
     os.makedirs(raw_dir, exist_ok=True)
     os.makedirs(processed_dir, exist_ok=True)
@@ -290,7 +294,7 @@ def run_migration(tables, state, suffix):
         processed_dump = os.path.join(processed_dir, f"{table}{suffix}.sql")
         
         if table in state["processed_tables"]:
-            logger.info(f"Skipping dump/process for '{table}', already completed in previous session.")
+            logger.info("Skipping dump/process for '%s', already completed in previous session.", table)
             processed_files.append((table, processed_dump))
             continue
         
@@ -300,7 +304,7 @@ def run_migration(tables, state, suffix):
             state["processed_tables"].append(table)
             save_state(state)
         else:
-            logger.warning(f"Skipping processing for table '{table}' due to dump failure.")
+            logger.warning("Skipping processing for table '%s' due to dump failure.", table)
             
     # Step 3: Load into destination
     if create_destination_db() and processed_files:
@@ -309,7 +313,7 @@ def run_migration(tables, state, suffix):
         
         for table, f in tqdm(processed_files, desc="Migrating to Destination", unit="file", leave=False):
             if table in state["migrated_tables"]:
-                logger.info(f"Skipping migration for '{table}', already loaded in previous session.")
+                logger.info("Skipping migration for '%s', already loaded in previous session.", table)
                 continue
                 
             if load_sql_file(f):
@@ -335,7 +339,7 @@ def run_migration(tables, state, suffix):
     h, m = divmod(m, 60)
     time_str = f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
     print(f"Total migration time: {time_str}")
-    logger.info(f"Total migration time: {time_str}")
+    logger.info("Total migration time: %s", time_str)
 
     logger.info("--- MIGRATION FINISHED ---")
 
@@ -357,7 +361,7 @@ def choose_database():
                 cursor.execute("SET GLOBAL max_connections = 300")
                 logger.info("Successfully increased max_connections to 300.")
             except Error as e:
-                logger.warning(f"Could not set max_connections (normal if lacking privileges): {e}")
+                logger.warning("Could not set max_connections (normal if lacking privileges): %s", e)
 
             cursor.execute("SHOW DATABASES")
             databases = [row[0] for row in cursor.fetchall() if row[0] not in ('information_schema', 'mysql', 'performance_schema', 'sys')]
@@ -438,21 +442,21 @@ def choose_destination_database():
 
 def run_headless(config_file):
     """Runs the migration non-interactively using a JSON configuration file."""
-    print(f"\n=============================================")
-    print(f"      STARTING HEADLESS MIGRATION JOB        ")
-    print(f"=============================================")
+    print("\n=============================================")
+    print("      STARTING HEADLESS MIGRATION JOB        ")
+    print("=============================================")
     print(f"Loading configuration from: {config_file}")
 
     if not os.path.exists(config_file):
-        logger.error(f"Configuration file '{config_file}' not found.")
+        logger.error("Configuration file '%s' not found.", config_file)
         print(f"Configuration file '{config_file}' not found.")
         return
 
     try:
-        with open(config_file, 'r') as f:
+        with open(config_file, 'r', encoding='utf-8') as f:
             cfg = json.load(f)
     except Exception as e:
-        logger.error(f"Error loading configuration file: {e}")
+        logger.error("Error loading configuration file: %s", e)
         print(f"Error loading configuration file: {e}")
         return
 
@@ -490,16 +494,16 @@ def run_headless(config_file):
     # Optional: read whether to clear previous state or resume
     resume = cfg.get('resume', True)
     
-    print(f"\n[Configuration Loaded]")
+    print("\n[Configuration Loaded]")
     print(f"Source DB: {config.DB_HOST} -> {config.DB_DATABASE}")
     print(f"Dest DB:   {config.DEST_DB_HOST} -> {config.DEST_DB_DATABASE}")
     print(f"Suffix:    '{suffix}'")
     
     if resume:
-        print(f"Resume Mode: Enabled (will skip already processed tables)")
+        print("Resume Mode: Enabled (will skip already processed tables)")
         state = load_state()
     else:
-        print(f"Resume Mode: Disabled (starting fresh)")
+        print("Resume Mode: Disabled (starting fresh)")
         state = {"processed_tables": [], "migrated_tables": []}
 
     current_state = {
@@ -517,34 +521,37 @@ def run_headless(config_file):
     }
     save_state(current_state)
     
-    print(f"\n[Fetching Tables]")
+    print("\n[Fetching Tables]")
     if table_list:
         print(f"Using explicit table list ({len(table_list)} tables provided)...")
-        logger.info(f"--- STARTING HEADLESS MIGRATION (List: {table_list}, DB: {config.DB_DATABASE}) ---")
+        logger.info("--- STARTING HEADLESS MIGRATION (List: %s, DB: %s) ---", table_list, config.DB_DATABASE)
         tables = get_lib_tables(from_list=table_list)
     else:
         print(f"Using regex pattern: '{pattern}'...")
-        logger.info(f"--- STARTING HEADLESS MIGRATION (Pattern: {pattern}, DB: {config.DB_DATABASE}) ---")
+        logger.info("--- STARTING HEADLESS MIGRATION (Pattern: %s, DB: %s) ---", pattern, config.DB_DATABASE)
         tables = get_lib_tables(pattern=pattern)
         
     print(f"-> Found {len(tables)} matching tables in source database.")
     
-    print(f"\n[Starting Migration]")
+    print("\n[Starting Migration]")
     run_migration(tables, current_state, suffix)
     
-    print(f"\n=============================================")
-    print(f"      HEADLESS MIGRATION JOB COMPLETED       ")
-    print(f"=============================================")
+    print("\n=============================================")
+    print("      HEADLESS MIGRATION JOB COMPLETED       ")
+    print("=============================================")
 
 def migration_menu(suffix):
+    """
+    Interactive menu for selecting and running table migrations.
+    """
     while True:
-        print(f"\n=============================================")
-        print(f"    MIGRATION OPTIONS")
+        print("\n=============================================")
+        print("    MIGRATION OPTIONS")
         print(f"    Source DB: {config.DB_DATABASE}")
         if hasattr(config, 'DEST_DB_DATABASE'):
             print(f"    Dest DB:   {config.DEST_DB_DATABASE}")
         print(f"    Table Suffix: {suffix}")
-        print(f"=============================================")
+        print("=============================================")
         print("1. Specify table name pattern (Regular Expression)")
         print("2. Specify exact table names (Comma-separated list)")
         print("3. Detect and resume paused session")
@@ -575,7 +582,7 @@ def migration_menu(suffix):
             }
             save_state(state)
             
-            logger.info(f"--- STARTING NEW MIGRATION (Pattern: {pattern}, DB: {config.DB_DATABASE}) ---")
+            logger.info("--- STARTING NEW MIGRATION (Pattern: %s, DB: %s) ---", pattern, config.DB_DATABASE)
             tables = get_lib_tables(pattern=pattern)
             run_migration(tables, state, suffix)
             
@@ -603,7 +610,7 @@ def migration_menu(suffix):
             }
             save_state(state)
             
-            logger.info(f"--- STARTING NEW MIGRATION (List: {table_list}, DB: {config.DB_DATABASE}) ---")
+            logger.info("--- STARTING NEW MIGRATION (List: %s, DB: %s) ---", table_list, config.DB_DATABASE)
             tables = get_lib_tables(from_list=table_list)
             run_migration(tables, state, suffix)
             
@@ -617,7 +624,7 @@ def migration_menu(suffix):
                 print("Paused session is empty. Start a new migration.")
                 continue
                 
-            logger.info(f"--- RESUMING PAUSED MIGRATION (DB: {config.DB_DATABASE}) ---")
+            logger.info("--- RESUMING PAUSED MIGRATION (DB: %s) ---", config.DB_DATABASE)
             
             # Re-fetch the tables based on the saved state parameters
             pattern = state.get("pattern")
@@ -737,7 +744,7 @@ def main():
                 print("Incomplete state file. Cannot resume directly. Please start normally.")
                 continue
                 
-            print(f"\n--- RESUMING PAUSED MIGRATION ---")
+            print("\n--- RESUMING PAUSED MIGRATION ---")
             print(f"Source Host: {db_host}")
             print(f"Source User: {db_user}")
             print(f"Source Database: {db_database}")
@@ -775,7 +782,7 @@ def main():
                 )
                 if conn.is_connected():
                     conn.close()
-                    logger.info(f"--- RESUMING PAUSED MIGRATION (DB: {config.DB_DATABASE}) ---")
+                    logger.info("--- RESUMING PAUSED MIGRATION (DB: %s) ---", config.DB_DATABASE)
                     
                     dest_db = state.get("dest_db_database")
                     if dest_db:

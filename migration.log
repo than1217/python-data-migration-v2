@@ -45,3 +45,17 @@ ERROR 1826 (HY000) at line 25 in file: 'C:\Users\J\Desktop\DSWD\python-data-migr
 2026-04-04 02:47:37,975 - INFO - All tables migrated successfully. Resetting migration state.
 2026-04-04 02:47:37,976 - INFO - Total migration time: 00:00:01
 2026-04-04 02:47:37,976 - INFO - --- MIGRATION FINISHED ---
+2026-04-05 15:13:51,823 - INFO - --- STARTING HEADLESS MIGRATION (Pattern: ^lib_sex, DB: pppp) ---
+2026-04-05 15:13:51,824 - INFO - Connecting to MySQL Server 127.0.0.1...
+2026-04-05 15:13:52,120 - INFO - Successfully connected to database 'pppp'.
+2026-04-05 15:13:52,173 - INFO - Dumping table 'lib_sex' to c:\Users\J\Desktop\DSWD\python-data-migration-v2\output\raw\v6\lib_sex_raw_v6.sql...
+2026-04-05 15:13:52,855 - INFO - Processing table 'lib_sex' dump line by line to handle large files...
+2026-04-05 15:13:52,882 - INFO - Successfully processed table 'lib_sex'.
+2026-04-05 15:13:52,885 - INFO - Connecting to destination server 127.0.0.1...
+2026-04-05 15:13:52,908 - INFO - Database 'consultant_ods' ensured on destination.
+2026-04-05 15:13:52,910 - INFO - Loading lib_sex_v6.sql into consultant_ods...
+2026-04-05 15:13:53,513 - INFO - Successfully loaded lib_sex_v6.sql
+2026-04-05 15:13:54,518 - INFO - Migration complete: 1/1 tables migrated.
+2026-04-05 15:13:54,518 - INFO - All tables migrated successfully. Resetting migration state.
+2026-04-05 15:13:54,520 - INFO - Total migration time: 00:00:02
+2026-04-05 15:13:54,520 - INFO - --- MIGRATION FINISHED ---
