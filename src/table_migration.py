@@ -240,9 +240,14 @@ def load_sql_file(filepath):
     filename = os.path.basename(filepath)
     # Added --connect_timeout=10 to explicitly manage connection timeouts and avoid hanging connections.
     # Added -e "source <file>" to run the script and immediately exit, ensuring the connection drops.
+    
+    # Convert backslashes to forward slashes to prevent MySQL escape character issues with paths
+    mysql_filepath = filepath.replace('\\', '/')
+    
+    # Prepend SET SESSION sql_mode='' to accept 0000-00-00 00:00:00 datetime formats
     command_str = (
         f'"{config.MYSQL_PATH}" --protocol=TCP --connect_timeout=10 --max_allowed_packet=1G -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
-        f'{config.DEST_DB_DATABASE} -e "source {filepath}"'
+        f'{config.DEST_DB_DATABASE} -e "SET SESSION sql_mode=\'\'; source {mysql_filepath}"'
     )
 
     logger.info("Loading %s into %s...", filename, config.DEST_DB_DATABASE)
@@ -678,6 +683,9 @@ def main():
             print("\n--- RESTORE DATABASE FROM SQL ---")
             
             sql_path = input("Enter the directory path containing the SQL files: ").strip()
+            # Strip quotes in case the user pasted the path using 'Copy as path' or the path contains spaces
+            sql_path = sql_path.strip('"').strip("'")
+            
             if not os.path.exists(sql_path) or not os.path.isdir(sql_path):
                 print("Invalid directory path. Returning to menu.")
                 continue
