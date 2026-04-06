@@ -116,27 +116,36 @@ def get_lib_tables(pattern=None, from_list=None):
 def run_mysqldump(table, output_file):
     """Executes mysqldump on the command line for the provided table"""
     
-    # Added explicit connection closure parameters where applicable to mysqldump
-    # --skip-opt prevents some default options that might hold locks/connections
-    command_str = (
-        f'"{config.MYSQLDUMP_PATH}" --protocol=TCP -h {config.DB_HOST} -u {config.DB_USER} --password="{config.DB_PASSWORD}" '
-        f'--no-tablespaces --skip-lock-tables --skip-add-locks --set-gtid-purged=OFF --single-transaction --quick --max_allowed_packet=1G {config.DB_DATABASE} {table}'
-    )
+    command = [
+        config.MYSQLDUMP_PATH, "--protocol=TCP", f"-h{config.DB_HOST}", f"-u{config.DB_USER}", f"--password={config.DB_PASSWORD}",
+        "--no-tablespaces", "--skip-lock-tables", "--skip-add-locks", "--set-gtid-purged=OFF", "--single-transaction", "--quick", "--max_allowed_packet=1G", config.DB_DATABASE, table
+    ]
     
     logger.info("Dumping table '%s' to %s...", table, output_file)
+    import tempfile
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            with open(output_file, "w", encoding="utf-8") as f:
-                result = subprocess.run(command_str, stdout=f, stderr=subprocess.PIPE, text=True, check=True, shell=True)
-            
-            # Add a small delay to avoid too many connections on the source server
-            time.sleep(0.5)
-            
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error("Attempt %s/%s failed to dump table '%s': %s", attempt, MAX_RETRIES, table, e.stderr)
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_DELAY)
+            with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='ignore') as err_file:
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=err_file, text=False)
+                
+                with open(output_file, "wb") as f, tqdm(desc=f"Dumping {table}", unit="B", unit_scale=True, leave=False) as pbar:
+                    while True:
+                        chunk = process.stdout.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        pbar.update(len(chunk))
+                        
+                process.wait()
+                if process.returncode == 0:
+                    time.sleep(0.5)
+                    return True
+                else:
+                    err_file.seek(0)
+                    stderr_output = err_file.read()
+                    logger.error("Attempt %s/%s failed to dump table '%s': %s", attempt, MAX_RETRIES, table, stderr_output)
+                    if attempt < MAX_RETRIES:
+                        time.sleep(RETRY_DELAY)
         except Exception as e:
             logger.error("Attempt %s/%s unexpected error during mysqldump for '%s': %s", attempt, MAX_RETRIES, table, e)
             if attempt < MAX_RETRIES:
@@ -147,7 +156,7 @@ def process_dump_file(input_file, output_file, table_name, suffix):
     """Reads the raw SQL dump, updates the table name, engine, and collation, and saves it to a new file"""
     logger.info("Processing table '%s' dump line by line to handle large files...", table_name)
     try:
-        new_table_name = f"{table_name}{suffix}"
+        new_table_name = table_name if table_name.endswith(suffix) else f"{table_name}{suffix}"
         table_name_pattern = re.compile(rf"`{table_name}`")
 
         # 2. Update Table-level options (ENGINE, CHARSET, COLLATE, ROW_FORMAT)
@@ -192,21 +201,25 @@ def process_dump_file(input_file, output_file, table_name, suffix):
         column_pattern = re.compile(r'(`[^`]+`\s+(?:varchar\([^)]+\)|char\([^)]+\)|enum\([^)]+\)|set\([^)]+\)|text|longtext|mediumtext|tinytext))([^,\n]*)', flags=re.IGNORECASE)
         
         with open(input_file, 'r', encoding='utf-8') as f_in, open(output_file, 'w', encoding='utf-8') as f_out:
-            for line in f_in:
-                # 1. Replace the table name with the suffixed table name.
-                if f"`{table_name}`" in line:
-                    line = table_name_pattern.sub(f"`{new_table_name}`", line)
-                
-                # Skip heavy regex for INSERT statements which form the bulk of data in huge tables
-                if not line.startswith('INSERT INTO'):
-                    if line.lstrip().startswith(')') and 'ENGINE=' in line.upper():
-                        line = table_options_pattern.sub(update_table_options, line)
-                    elif line.lstrip().startswith('`'):
-                        line = charset_pattern.sub('CHARACTER SET utf8mb4', line)
-                        line = collate_pattern.sub('COLLATE utf8mb4_0900_ai_ci', line)
-                        line = column_pattern.sub(inject_charset_collate, line)
+            import os
+            file_size = os.path.getsize(input_file)
+            with tqdm(total=file_size, desc=f"Processing {table_name}", unit="B", unit_scale=True, leave=False) as pbar:
+                for line in f_in:
+                    # 1. Replace the table name with the suffixed table name.
+                    if f"`{table_name}`" in line:
+                        line = table_name_pattern.sub(f"`{new_table_name}`", line)
+                    
+                    # Skip heavy regex for INSERT statements which form the bulk of data in huge tables
+                    if not line.startswith('INSERT INTO'):
+                        if line.lstrip().startswith(')') and 'ENGINE=' in line.upper():
+                            line = table_options_pattern.sub(update_table_options, line)
+                        elif line.lstrip().startswith('`'):
+                            line = charset_pattern.sub('CHARACTER SET utf8mb4', line)
+                            line = collate_pattern.sub('COLLATE utf8mb4_0900_ai_ci', line)
+                            line = column_pattern.sub(inject_charset_collate, line)
 
-                f_out.write(line)
+                    f_out.write(line)
+                    pbar.update(len(line))
         logger.info("Successfully processed table '%s'.", table_name)
             
     except Exception as e:
@@ -239,47 +252,50 @@ def create_destination_db():
 def load_sql_file(filepath):
     """Loads a SQL dump file into the destination database using the mysql client."""
     filename = os.path.basename(filepath)
-    # Added --connect_timeout=10 to explicitly manage connection timeouts and avoid hanging connections.
-    # Added -e "source <file>" to run the script and immediately exit, ensuring the connection drops.
     
-    # Convert backslashes to forward slashes to prevent MySQL escape character issues with paths
-    mysql_filepath = filepath.replace('\\', '/')
-    
-    # Create a temporary runner script to bypass -e limitations when chaining SOURCE with other statements
-    temp_runner = os.path.join(base_dir, f"temp_run_{int(time.time())}.sql")
-    with open(temp_runner, "w", encoding="utf-8") as tr:
-        tr.write("SET SESSION sql_mode='';\n")
-        tr.write(f"SOURCE {mysql_filepath}\n")
-    
-    command_str = (
-        f'"{config.MYSQL_PATH}" --protocol=TCP --connect_timeout=10 --max_allowed_packet=1G -h {config.DEST_DB_HOST} -u {config.DEST_DB_USER} --password="{config.DEST_DB_PASSWORD}" '
-        f'{config.DEST_DB_DATABASE} < "{temp_runner}"'
-    )
+    command = [
+        config.MYSQL_PATH, "--protocol=TCP", "--connect_timeout=10", "--max_allowed_packet=1G",
+        f"-h{config.DEST_DB_HOST}", f"-u{config.DEST_DB_USER}", f"--password={config.DEST_DB_PASSWORD}", config.DEST_DB_DATABASE
+    ]
 
     logger.info("Loading %s into %s...", filename, config.DEST_DB_DATABASE)
+    import tempfile
+    file_size = os.path.getsize(filepath)
+    
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            # Add explicit close/kill for the process after run to ensure clean disconnect
-            result = subprocess.run(command_str, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, check=True, shell=True)
-            logger.info("Successfully loaded %s", filename)
-            
-            # Add a small delay to avoid overwhelming the MySQL server with too many rapid connections
-            time.sleep(1)
-            
-            if os.path.exists(temp_runner):
-                os.remove(temp_runner)
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error("Attempt %s/%s failed to load %s: %s", attempt, MAX_RETRIES, filename, e.stderr)
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_DELAY)
+            with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='ignore') as err_file:
+                process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err_file, text=False)
+                
+                process.stdin.write(b"SET SESSION sql_mode='';\n")
+                
+                with open(filepath, 'rb') as f, tqdm(total=file_size, desc=f"Loading {filename}", unit='B', unit_scale=True, leave=False) as pbar:
+                    while True:
+                        chunk = f.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        process.stdin.write(chunk)
+                        process.stdin.flush()
+                        pbar.update(len(chunk))
+                        
+                process.stdin.close()
+                process.wait()
+                
+                if process.returncode == 0:
+                    logger.info("Successfully loaded %s", filename)
+                    time.sleep(1)
+                    return True
+                else:
+                    err_file.seek(0)
+                    stderr_output = err_file.read()
+                    logger.error("Attempt %s/%s failed to load %s: %s", attempt, MAX_RETRIES, filename, stderr_output)
+                    if attempt < MAX_RETRIES:
+                        time.sleep(RETRY_DELAY)
         except Exception as e:
             logger.error("Attempt %s/%s unexpected error during SQL loading of %s: %s", attempt, MAX_RETRIES, filename, e)
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
                 
-    if os.path.exists(temp_runner):
-        os.remove(temp_runner)
     return False
 
 # pylint: disable=too-many-locals
@@ -308,8 +324,11 @@ def run_migration(tables, state, suffix):
     pbar_dump = tqdm(tables, desc="Dumping and Processing", unit="table", leave=False)
     for table in pbar_dump:
         pbar_dump.set_postfix(table=table)
+        pbar_dump.refresh()
+        
+        target_table_name = table if table.endswith(suffix) else f"{table}{suffix}"
         raw_dump = os.path.join(raw_dir, f"{table}_raw{suffix}.sql")
-        processed_dump = os.path.join(processed_dir, f"{table}{suffix}.sql")
+        processed_dump = os.path.join(processed_dir, f"{target_table_name}.sql")
         
         if table in state["processed_tables"]:
             logger.info("Skipping dump/process for '%s', already completed in previous session.", table)
@@ -332,6 +351,7 @@ def run_migration(tables, state, suffix):
         pbar_load = tqdm(processed_files, desc="Migrating to Destination", unit="file", leave=False)
         for table, f in pbar_load:
             pbar_load.set_postfix(table=table)
+            pbar_load.refresh()
             if table in state["migrated_tables"]:
                 logger.info("Skipping migration for '%s', already loaded in previous session.", table)
                 continue
@@ -741,6 +761,7 @@ def main():
             pbar = tqdm(sql_files, desc="Restoring SQL files", unit="file", leave=True)
             for file in pbar:
                 pbar.set_postfix(current_file=file)
+                pbar.refresh()
                 filepath = os.path.join(sql_path, file)
                 if load_sql_file(filepath):
                     successful_restores += 1
