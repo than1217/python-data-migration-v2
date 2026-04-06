@@ -183,12 +183,13 @@ def process_dump_file(input_file, output_file, table_name, suffix):
         collate_pattern = re.compile(r'COLLATE\s+\w+', flags=re.IGNORECASE)
         
         def inject_charset_collate(match):
-            col_def = match.group(0)
-            if re.search(r'CHARACTER SET', col_def, flags=re.IGNORECASE):
-                return col_def
-            return match.group(1) + " CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci" + match.group(2)
+            rest = match.group(2)
+            # Remove any existing CHARACTER SET and COLLATE to avoid duplication
+            rest = re.sub(r'\s*CHARACTER SET\s+\w+', '', rest, flags=re.IGNORECASE)
+            rest = re.sub(r'\s*COLLATE\s+\w+', '', rest, flags=re.IGNORECASE)
+            return match.group(1) + " CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci" + rest
 
-        column_pattern = re.compile(r'(`[^`]+`\s+(?:varchar\([^)]+\)|char\([^)]+\)|enum\([^)]+\)|text|longtext|mediumtext|tinytext))([^,\n]*)', flags=re.IGNORECASE)
+        column_pattern = re.compile(r'(`[^`]+`\s+(?:varchar\([^)]+\)|char\([^)]+\)|enum\([^)]+\)|set\([^)]+\)|text|longtext|mediumtext|tinytext))([^,\n]*)', flags=re.IGNORECASE)
         
         with open(input_file, 'r', encoding='utf-8') as f_in, open(output_file, 'w', encoding='utf-8') as f_out:
             for line in f_in:
