@@ -305,7 +305,9 @@ def run_migration(tables, state, suffix):
     
     processed_files = []
     # Step 1 & 2: Dump and Process
-    for table in tqdm(tables, desc="Dumping and Processing", unit="table", leave=False):
+    pbar_dump = tqdm(tables, desc="Dumping and Processing", unit="table", leave=False)
+    for table in pbar_dump:
+        pbar_dump.set_postfix(table=table)
         raw_dump = os.path.join(raw_dir, f"{table}_raw{suffix}.sql")
         processed_dump = os.path.join(processed_dir, f"{table}{suffix}.sql")
         
@@ -327,7 +329,9 @@ def run_migration(tables, state, suffix):
         # Count items that were already migrated previously
         successful_migrations = sum(1 for table, _ in processed_files if table in state["migrated_tables"])
         
-        for table, f in tqdm(processed_files, desc="Migrating to Destination", unit="file", leave=False):
+        pbar_load = tqdm(processed_files, desc="Migrating to Destination", unit="file", leave=False)
+        for table, f in pbar_load:
+            pbar_load.set_postfix(table=table)
             if table in state["migrated_tables"]:
                 logger.info("Skipping migration for '%s', already loaded in previous session.", table)
                 continue

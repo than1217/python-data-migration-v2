@@ -1956,3 +1956,8 @@ ERROR 1064 (42000) at line 25 in file: 'C:\Users\J\Desktop\DSWD\python-data-migr
 2026-04-06 08:06:56,259 - INFO - All tables migrated successfully. Resetting migration state.
 2026-04-06 08:06:56,261 - INFO - Total migration time: 00:00:31
 2026-04-06 08:06:56,261 - INFO - --- MIGRATION FINISHED ---
+2026-04-06 08:12:32,272 - WARNING - Could not set max_connections (normal if lacking privileges): 1227 (42000): Access denied; you need (at least one of) the SUPER or SYSTEM_VARIABLES_ADMIN privilege(s) for this operation
+2026-04-06 08:13:54,301 - INFO - --- STARTING NEW MIGRATION (List: ['tbl_payroll_history_v3', 'tbl_payroll_history_extension_v3'], DB: db_ppis_v3) ---
+2026-04-06 08:13:54,301 - INFO - Connecting to MySQL Server 10.255.9.111...
+2026-04-06 08:13:54,381 - INFO - Successfully connected to database 'db_ppis_v3'.
+2026-04-06 08:13:54,410 - INFO - Dumping table 'tbl_payroll_history_extension_v3' to C:\Users\J\Desktop\DSWD\python-data-migration-v2\output\raw\v3\tbl_payroll_history_extension_v3_raw_v3.sql...
