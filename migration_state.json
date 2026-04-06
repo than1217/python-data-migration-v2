@@ -1,6 +1,7 @@
 {
     "processed_tables": [
-        "tbl_payroll_history_extension_v3"
+        "tbl_payroll_history_extension_v3",
+        "tbl_payroll_history_v3"
     ],
     "migrated_tables": [],
     "pattern": null,

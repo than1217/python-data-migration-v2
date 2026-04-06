@@ -5,16 +5,16 @@ A robust, Python-based MySQL table migration utility designed to migrate databas
 ## Features
 
 - **Cross-Platform Support**: Automatically detects Windows or Linux/macOS environments to use the correct default MySQL executables (`mysql`/`mysqldump`).
-- **Interactive CLI Menu**: Easily select target databases, source patterns, and migration strategies through an interactive console interface.
+- **Interactive CLI Menu**: Easily select target databases, source patterns, and migration strategies through an interactive console interface with real-time `tqdm` progress tracking per table.
 - **Smart Schema Adjustments**:
   - Automatically appends configurable suffixes (e.g., `_v2`, `_v3`) to table names.
   - Converts table engines to `InnoDB` and enforces `ROW_FORMAT=DYNAMIC`.
-  - Sets table and column character sets to `utf8mb4` and collations to `utf8mb4_0900_ai_ci`.
+  - Sets table and column character sets to `utf8mb4` and collations to `utf8mb4_0900_ai_ci` without causing redundant declarations.
 - **Target Selection**: Select tables using Regular Expressions (e.g., `^lib_.*`) or comma-separated exact names. Includes intelligent skipping of obsolete tables (e.g., skipping years below 2020 or `_old` suffix tables).
 - **Resumable Migrations**: Built-in state tracking (`migration_state.json`) allows you to seamlessly resume migrations if interrupted or paused.
 - **SQL Restore Utility**: Allows restoring a directory full of `.sql` files to a destination database via regex matching.
 - **Comprehensive Logging**: Detailed execution logs are stored in `migration.log`.
-- **Standalone SQL Updater**: Includes a separate script (`src/update.py`) to bulk process and update collation and engine attributes of existing `.sql` files.
+- **Standalone SQL Updaters**: Includes separate scripts (`src/update.py`, `src/clean_sql_files.py`) to bulk process, update collation/engine attributes, and remove redundant schema syntax in existing `.sql` files.
 
 ## Prerequisites
 
@@ -109,14 +109,19 @@ python src/table_migration.py -c connection_config.json
 ```
 *Note: You can specify either `pattern` (regex string) or `table_list` (comma-separated string e.g., `"table1,table2"` or JSON array `["table1", "table2"]`). If `resume` is `true`, it will skip tables already tracked in `migration_state.json`.*
 
-### Standalone SQL Updater
+### Standalone SQL Updaters
 
-If you only need to process existing SQL dump files to update their collation and storage engines, run:
+If you only need to process existing SQL dump files to update their collation and storage engines, or clean up redundant statements, use these utilities:
 
 ```bash
 python src/update.py
 ```
 This script reads all `.sql` files in `output/processed/` and standardizes them to `InnoDB` and `utf8mb4`.
+
+```bash
+python src/clean_sql_files.py
+```
+This script performs advanced cleanup recursively on `.sql` files in `output/processed/`, ensuring no duplicate `CHARACTER SET` or `COLLATE` definitions exist on string columns or table definitions.
 
 ## Directory Structure
 
@@ -128,7 +133,8 @@ python-data-migration-v2/
 ├── src/
 │   ├── config.py            # Default configuration variables
 │   ├── table_migration.py   # Primary application entrypoint
-│   └── update.py            # Standalone SQL modification utility
+│   ├── update.py            # Standalone SQL modification utility
+│   └── clean_sql_files.py   # Utility to remove redundant charsets/collations
 ├── migration_state.json     # Migration progress tracker (auto-generated)
 ├── migration.log            # Event log file (auto-generated)
 ├── connection_config.json   # JSON config for headless execution
