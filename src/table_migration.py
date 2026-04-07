@@ -75,18 +75,22 @@ def get_lib_tables(pattern=None, from_list=None):
                     if not pattern:
                         pattern = r'^lib_.*'
                         
-                    regex = re.compile(pattern)
-                    
-                    for table_name in all_tables:
-                        if not regex.match(table_name):
-                            continue
-                            
-                        # 1. Exclude tables ending with _old
-                        if table_name.endswith('_old'):
-                            continue
+                regex = re.compile(pattern, re.IGNORECASE)
+                
+                for table_name in all_tables:
+                    if not regex.search(table_name):
+                        continue
                         
-                        # 2. Exclude tables with year values below 2020
-                        # Find all 4-digit numbers in the table name
+                    # If the pattern is exactly the table name, bypass exclusions
+                    is_exact_match = (pattern == table_name or pattern == f"^{table_name}$")
+                    
+                    # 1. Exclude tables ending with _old
+                    if table_name.endswith('_old') and not is_exact_match:
+                        continue
+                    
+                    # 2. Exclude tables with year values below 2020
+                    # Find all 4-digit numbers in the table name
+                    if not is_exact_match:
                         years_found = re.findall(r'\d{4}', table_name)
                         is_old_year = False
                         for year_str in years_found:
@@ -99,9 +103,6 @@ def get_lib_tables(pattern=None, from_list=None):
                         if is_old_year:
                             logger.info("Skipping table '%s' (reason: year below 2020)", table_name)
                             continue
-                        
-                        tables.append(table_name)
-                
                 cursor.close()
                 conn.close()
                 return tables
@@ -268,6 +269,9 @@ def load_sql_file(filepath):
                 process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err_file, text=False)
                 
                 process.stdin.write(b"SET SESSION sql_mode='';\n")
+                process.stdin.write(b"SET SESSION UNIQUE_CHECKS=0;\n")
+                process.stdin.write(b"SET SESSION FOREIGN_KEY_CHECKS=0;\n")
+                process.stdin.write(b"SET SESSION AUTOCOMMIT=0;\n")
                 
                 with open(filepath, 'rb') as f, tqdm(total=file_size, desc=f"Loading {filename}", unit='B', unit_scale=True, leave=False) as pbar:
                     while True:
@@ -278,6 +282,7 @@ def load_sql_file(filepath):
                         process.stdin.flush()
                         pbar.update(len(chunk))
                         
+                process.stdin.write(b"COMMIT;\n")
                 process.stdin.close()
                 process.wait()
                 
@@ -319,6 +324,7 @@ def run_migration(tables, state, suffix):
     print(f"\nMigrating {len(tables)} tables (logging details to migration.log)...")
     start_time = time.time()
     
+    table_times = {}
     processed_files = []
     # Step 1 & 2: Dump and Process
     pbar_dump = tqdm(tables, desc="Dumping and Processing", unit="table", leave=False)
@@ -335,8 +341,12 @@ def run_migration(tables, state, suffix):
             processed_files.append((table, processed_dump))
             continue
         
+        t_start = time.time()
         if run_mysqldump(table, raw_dump):
             process_dump_file(raw_dump, processed_dump, table, suffix)
+            dump_process_time = time.time() - t_start
+            table_times[table] = dump_process_time
+            logger.info("Dump and process for '%s' completed in %.2f seconds.", table, dump_process_time)
             processed_files.append((table, processed_dump))
             state["processed_tables"].append(table)
             save_state(state)
@@ -356,7 +366,12 @@ def run_migration(tables, state, suffix):
                 logger.info("Skipping migration for '%s', already loaded in previous session.", table)
                 continue
                 
+            t_start = time.time()
             if load_sql_file(f):
+                load_time = time.time() - t_start
+                total_time = table_times.get(table, 0) + load_time
+                logger.info("Loading for '%s' completed in %.2f seconds.", table, load_time)
+                logger.info("Total migration time for table '%s': %.2f seconds.", table, total_time)
                 successful_migrations += 1
                 state["migrated_tables"].append(table)
                 save_state(state)
