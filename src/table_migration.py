@@ -75,34 +75,14 @@ def get_lib_tables(pattern=None, from_list=None):
                     if not pattern:
                         pattern = r'^lib_.*'
                         
-                regex = re.compile(pattern, re.IGNORECASE)
-                
-                for table_name in all_tables:
-                    if not regex.search(table_name):
-                        continue
-                        
-                    # If the pattern is exactly the table name, bypass exclusions
-                    is_exact_match = (pattern == table_name or pattern == f"^{table_name}$")
+                    regex = re.compile(pattern, re.IGNORECASE)
                     
-                    # 1. Exclude tables ending with _old
-                    if table_name.endswith('_old') and not is_exact_match:
-                        continue
-                    
-                    # 2. Exclude tables with year values below 2020
-                    # Find all 4-digit numbers in the table name
-                    if not is_exact_match:
-                        years_found = re.findall(r'\d{4}', table_name)
-                        is_old_year = False
-                        for year_str in years_found:
-                            year = int(year_str)
-                            # If it's a realistic year value and below 2020, exclude it
-                            if 2000 <= year < 2020:
-                                is_old_year = True
-                                break
-                        
-                        if is_old_year:
-                            logger.info("Skipping table '%s' (reason: year below 2020)", table_name)
+                    for table_name in all_tables:
+                        if not regex.search(table_name):
                             continue
+                            
+                        tables.append(table_name)
+                        
                 cursor.close()
                 conn.close()
                 return tables
