@@ -101,9 +101,17 @@ def run_mysqldump(table, output_file):
     """Executes mysqldump on the command line for the provided table"""
     
     command = [
-        config.MYSQLDUMP_PATH, "--protocol=TCP", f"-h{config.DB_HOST}", f"-u{config.DB_USER}", f"--password={config.DB_PASSWORD}",
-        "--no-tablespaces", "--skip-lock-tables", "--skip-add-locks", "--set-gtid-purged=OFF", "--single-transaction", "--quick", "--max_allowed_packet=1G", config.DB_DATABASE, table
+        config.MYSQLDUMP_PATH,
     ]
+
+    # Use TCP for remote hosts, otherwise default to socket/pipe for localhost
+    if config.DB_HOST.lower() not in ['localhost', '127.0.0.1']:
+        command.extend([f"-h{config.DB_HOST}"])
+
+    command.extend([
+        f"-u{config.DB_USER}", f"--password={config.DB_PASSWORD}",
+        "--no-tablespaces", "--skip-lock-tables", "--skip-add-locks", "--set-gtid-purged=OFF", "--single-transaction", "--quick", "--max_allowed_packet=1G", config.DB_DATABASE, table
+    ])
     
     logger.info("Dumping table '%s' to %s...", table, output_file)
     import tempfile
@@ -240,9 +248,17 @@ def load_sql_file(filepath):
     filename = os.path.basename(filepath)
     
     command = [
-        config.MYSQL_PATH, "--protocol=TCP", "--connect_timeout=10", "--max_allowed_packet=1G",
-        f"-h{config.DEST_DB_HOST}", f"-u{config.DEST_DB_USER}", f"--password={config.DEST_DB_PASSWORD}", config.DEST_DB_DATABASE
+        config.MYSQL_PATH,
     ]
+
+    # Use TCP for remote hosts, otherwise default to socket/pipe for localhost
+    if config.DEST_DB_HOST.lower() not in ['localhost', '127.0.0.1']:
+        command.extend([f"-h{config.DEST_DB_HOST}"])
+    
+    command.extend([
+        "--connect_timeout=10", "--max_allowed_packet=1G",
+        f"-u{config.DEST_DB_USER}", f"--password={config.DEST_DB_PASSWORD}", config.DEST_DB_DATABASE
+    ])
 
     logger.info("Loading %s into %s...", filename, config.DEST_DB_DATABASE)
     import tempfile
