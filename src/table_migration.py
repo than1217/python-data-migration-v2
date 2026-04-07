@@ -65,6 +65,9 @@ def get_lib_tables(pattern=None, from_list=None):
                 cursor.execute("SHOW TABLES")
                 
                 all_tables = [row[0] for row in cursor.fetchall()]
+                logger.info(f"Found {len(all_tables)} tables in total. Checking for matches...")
+                if len(all_tables) < 300:  # Log all tables if the list is not too long
+                    logger.info("Tables found: %s", ", ".join(all_tables))
                 tables = []
                 
                 if from_list:
