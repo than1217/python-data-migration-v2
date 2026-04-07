@@ -2,7 +2,7 @@
     "db_host": "10.255.9.104",
     "db_user": "jdfiguero",
     "db_database": "pppp",
-    "dest_db_host": "127.0.0.1",
+    "dest_db_host": "10.10.10.133",
     "dest_db_user": "jdfiguero",
     "dest_db_database": "consultant_ods",
     "suffix": "_v2",
