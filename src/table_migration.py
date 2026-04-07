@@ -222,9 +222,11 @@ def process_dump_file(input_file, output_file, table_name, suffix):
                     f_out.write(line)
                     pbar.update(len(line))
         logger.info("Successfully processed table '%s'.", table_name)
+        return True
             
     except Exception as e:
         logger.error("Error processing dump file for '%s': %s", table_name, e)
+        return False
 
 def create_destination_db():
     """Connects to MySQL and creates the destination database if it doesn't exist."""
@@ -343,13 +345,23 @@ def run_migration(tables, state, suffix):
         
         t_start = time.time()
         if run_mysqldump(table, raw_dump):
-            process_dump_file(raw_dump, processed_dump, table, suffix)
-            dump_process_time = time.time() - t_start
-            table_times[table] = dump_process_time
-            logger.info("Dump and process for '%s' completed in %.2f seconds.", table, dump_process_time)
-            processed_files.append((table, processed_dump))
-            state["processed_tables"].append(table)
-            save_state(state)
+            if process_dump_file(raw_dump, processed_dump, table, suffix):
+                dump_process_time = time.time() - t_start
+                table_times[table] = dump_process_time
+                logger.info("Dump and process for '%s' completed in %.2f seconds.", table, dump_process_time)
+                processed_files.append((table, processed_dump))
+                state["processed_tables"].append(table)
+                save_state(state)
+                
+                # Delete raw dump file to save space
+                try:
+                    if os.path.exists(raw_dump):
+                        os.remove(raw_dump)
+                        logger.info("Deleted raw dump file '%s' to save space.", raw_dump)
+                except Exception as e:
+                    logger.warning("Failed to delete raw dump file '%s': %s", raw_dump, e)
+            else:
+                logger.warning("Skipping table '%s' due to processing failure.", table)
         else:
             logger.warning("Skipping processing for table '%s' due to dump failure.", table)
             
