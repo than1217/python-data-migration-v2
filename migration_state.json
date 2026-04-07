@@ -1,19 +1,6 @@
 {
-    "processed_tables": [
-        "tbl_payroll_history_extension_v3",
-        "tbl_payroll_history_v3"
-    ],
+    "processed_tables": [],
     "migrated_tables": [],
     "pattern": null,
-    "from_list": [
-        "tbl_payroll_history_v3",
-        "tbl_payroll_history_extension_v3"
-    ],
-    "suffix": "_v3",
-    "db_host": "10.255.9.111",
-    "db_user": "jfigueroa",
-    "db_database": "db_ppis_v3",
-    "dest_db_host": "10.10.10.133",
-    "dest_db_user": "jfiguero",
-    "dest_db_database": "consultant_ods"
+    "from_list": null
 }
