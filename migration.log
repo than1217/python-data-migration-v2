@@ -22,3 +22,21 @@
 2026-04-07 15:15:28,672 - INFO - All tables migrated successfully. Resetting migration state.
 2026-04-07 15:15:28,673 - INFO - Total migration time: 00:00:24
 2026-04-07 15:15:28,674 - INFO - --- MIGRATION FINISHED ---
+2026-04-07 15:36:57,851 - INFO - --- STARTING HEADLESS MIGRATION (Pattern: ^tbl_beneficiaries_roster_family_dev_202[0]_[1]$, DB: pppp) ---
+2026-04-07 15:36:57,852 - INFO - Connecting to MySQL Server 10.255.9.104...
+2026-04-07 15:36:58,393 - INFO - Successfully connected to database 'pppp'.
+2026-04-07 15:36:58,575 - INFO - Found 1863 tables in total. Checking for matches...
+2026-04-07 15:36:58,588 - INFO - Dumping table 'tbl_beneficiaries_roster_family_dev_2020_1' to C:\Users\J\Desktop\DSWD\python-data-migration-v2\output\raw\v2\tbl_beneficiaries_roster_family_dev_2020_1_raw_v2.sql...
+2026-04-07 15:41:33,475 - INFO - Processing table 'tbl_beneficiaries_roster_family_dev_2020_1' dump line by line to handle large files...
+2026-04-07 15:41:39,319 - INFO - Successfully processed table 'tbl_beneficiaries_roster_family_dev_2020_1'.
+2026-04-07 15:41:39,319 - INFO - Dump and process for 'tbl_beneficiaries_roster_family_dev_2020_1' completed in 280.73 seconds.
+2026-04-07 15:41:39,410 - INFO - Deleted raw dump file 'C:\Users\J\Desktop\DSWD\python-data-migration-v2\output\raw\v2\tbl_beneficiaries_roster_family_dev_2020_1_raw_v2.sql' to save space.
+2026-04-07 15:41:39,411 - INFO - Connecting to destination server 10.10.10.133...
+2026-04-07 15:41:39,512 - INFO - Database 'consultant_ods' ensured on destination.
+2026-04-07 15:41:39,514 - INFO - Loading tbl_beneficiaries_roster_family_dev_2020_1_v2.sql into consultant_ods...
+2026-04-07 15:49:00,379 - ERROR - Attempt 1/3 unexpected error during SQL loading of tbl_beneficiaries_roster_family_dev_2020_1_v2.sql: [Errno 32] Broken pipe
+2026-04-07 15:50:05,496 - ERROR - Attempt 2/3 unexpected error during SQL loading of tbl_beneficiaries_roster_family_dev_2020_1_v2.sql: [Errno 32] Broken pipe
+2026-04-07 15:51:10,632 - ERROR - Attempt 3/3 unexpected error during SQL loading of tbl_beneficiaries_roster_family_dev_2020_1_v2.sql: [Errno 32] Broken pipe
+2026-04-07 15:51:10,634 - INFO - Migration complete: 0/1 tables migrated.
+2026-04-07 15:51:10,635 - INFO - Total migration time: 00:14:12
+2026-04-07 15:51:10,635 - INFO - --- MIGRATION FINISHED ---
