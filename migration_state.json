@@ -1,15 +1,6 @@
 {
-    "processed_tables": [
-        "tbl_beneficiaries_roster_family_dev_2020_1"
-    ],
+    "processed_tables": [],
     "migrated_tables": [],
-    "pattern": "^tbl_beneficiaries_roster_family_dev_202[0]_[1]$",
-    "from_list": null,
-    "suffix": "_v2",
-    "db_host": "10.255.9.104",
-    "db_user": "jfiguero",
-    "db_database": "pppp",
-    "dest_db_host": "10.10.10.133",
-    "dest_db_user": "jfiguero",
-    "dest_db_database": "consultant_ods"
+    "pattern": null,
+    "from_list": null
 }
