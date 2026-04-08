@@ -8,10 +8,10 @@ load_dotenv()
 # Default Source Database Configuration
 # These are used as defaults if not explicitly set via environment variables.
 # When running interactively, the CLI menu allows the user to override these.
-DB_HOST = os.environ.get('DB_HOST', '10.255.9.104')
+DB_HOST = os.environ.get('DB_HOST', '10.255.9.100')
 DB_DATABASE = os.environ.get('DB_DATABASE', 'pppp')
-DB_USER = os.environ.get('DB_USER', 'jfiguero')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', 'jfigueroJF9(')
+DB_USER = os.environ.get('DB_USER', 'jfigueroa')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'jfigueroJF)#')
 
 is_windows = sys.platform.startswith('win')
 

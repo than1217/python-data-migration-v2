@@ -60,12 +60,14 @@ def get_lib_tables(pattern=None, from_list=None):
             )
             if conn.is_connected():
                 logger.info("Successfully connected to database '%s'.", config.DB_DATABASE)
+                print(f"Successfully connected to database '{config.DB_DATABASE}'.")
                 
                 cursor = conn.cursor()
                 cursor.execute("SHOW TABLES")
                 
                 all_tables = [row[0] for row in cursor.fetchall()]
                 logger.info(f"Found {len(all_tables)} tables in total. Checking for matches...")
+                print(f"Found {len(all_tables)} tables in total. Checking for matches...")
                 if len(all_tables) < 300:  # Log all tables if the list is not too long
                     logger.info("Tables found: %s", ", ".join(all_tables))
                 tables = []
@@ -92,6 +94,7 @@ def get_lib_tables(pattern=None, from_list=None):
                 
         except Error as e:
             logger.error("Attempt %s/%s - Error connecting to MySQL: %s", attempt, MAX_RETRIES, e)
+            print(f"Attempt {attempt}/{MAX_RETRIES} - Error connecting to MySQL: {e}")
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
     
@@ -349,9 +352,13 @@ def run_migration(tables, state, suffix):
         processed_dump = os.path.join(processed_dir, f"{target_table_name}.sql")
         
         if table in state["processed_tables"]:
-            logger.info("Skipping dump/process for '%s', already completed in previous session.", table)
-            processed_files.append((table, processed_dump))
-            continue
+            if table in state.get("migrated_tables", []) or os.path.exists(processed_dump):
+                logger.info("Skipping dump/process for '%s', already completed in previous session.", table)
+                processed_files.append((table, processed_dump))
+                continue
+            else:
+                logger.warning("Processed file for '%s' not found. Re-dumping.", table)
+                state["processed_tables"].remove(table)
         
         t_start = time.time()
         if run_mysqldump(table, raw_dump):
