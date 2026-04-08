@@ -508,10 +508,14 @@ def choose_destination_database():
 
 def run_headless(config_file):
     """Runs the migration non-interactively using a JSON configuration file."""
+    logger.info("=============================================")
+    logger.info("      STARTING HEADLESS MIGRATION JOB        ")
+    logger.info("=============================================")
     print("\n=============================================")
     print("      STARTING HEADLESS MIGRATION JOB        ")
     print("=============================================")
     print(f"Loading configuration from: {config_file}")
+    logger.info("Loading configuration from: %s", config_file)
 
     if not os.path.exists(config_file):
         logger.error("Configuration file '%s' not found.", config_file)
@@ -564,12 +568,15 @@ def run_headless(config_file):
     print(f"Source DB: {config.DB_HOST} -> {config.DB_DATABASE}")
     print(f"Dest DB:   {config.DEST_DB_HOST} -> {config.DEST_DB_DATABASE}")
     print(f"Suffix:    '{suffix}'")
+    logger.info("Configuration loaded: Source DB: %s -> %s, Dest DB: %s -> %s, Suffix: '%s'", config.DB_HOST, config.DB_DATABASE, config.DEST_DB_HOST, config.DEST_DB_DATABASE, suffix)
     
     if resume:
         print("Resume Mode: Enabled (will skip already processed tables)")
+        logger.info("Resume Mode: Enabled")
         state = load_state()
     else:
         print("Resume Mode: Disabled (starting fresh)")
+        logger.info("Resume Mode: Disabled (starting fresh)")
         state = {"processed_tables": [], "migrated_tables": []}
 
     current_state = {
@@ -588,6 +595,7 @@ def run_headless(config_file):
     save_state(current_state)
     
     print("\n[Fetching Tables]")
+    logger.info("Fetching tables...")
     if table_list:
         print(f"Using explicit table list ({len(table_list)} tables provided)...")
         logger.info("--- STARTING HEADLESS MIGRATION (List: %s, DB: %s) ---", table_list, config.DB_DATABASE)
@@ -598,13 +606,18 @@ def run_headless(config_file):
         tables = get_lib_tables(pattern=pattern)
         
     print(f"-> Found {len(tables)} matching tables in source database.")
+    logger.info("-> Found %d matching tables in source database.", len(tables))
     
     print("\n[Starting Migration]")
+    logger.info("Starting migration...")
     run_migration(tables, current_state, suffix)
     
     print("\n=============================================")
     print("      HEADLESS MIGRATION JOB COMPLETED       ")
     print("=============================================")
+    logger.info("=============================================")
+    logger.info("      HEADLESS MIGRATION JOB COMPLETED       ")
+    logger.info("=============================================")
 
 def migration_menu(suffix):
     """
