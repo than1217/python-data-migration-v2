@@ -314,11 +314,6 @@ def load_sql_file(filepath):
             stderr_output = err_file.read()
             logger.error("Attempt %s/%s unexpected error during SQL loading of %s: %s", attempt, MAX_RETRIES, filename, e)
             if stderr_output:
-                logger.error("--> MySQL client stderr: %s", stderr_output.strip()
-            err_file.seek(0)
-            stderr_output = err_file.read()
-            logger.error("Attempt %s/%s unexpected error during SQL loading of %s: %s", attempt, MAX_RETRIES, filename, e)
-            if stderr_output:
                 logger.error("--> MySQL client stderr: %s", stderr_output.strip())
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
