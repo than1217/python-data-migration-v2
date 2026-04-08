@@ -257,6 +257,7 @@ def load_sql_file(filepath):
     
     command.extend([
         "--connect_timeout=10", "--max_allowed_packet=1G",
+        "--init-command=SET SESSION sql_mode=''; SET SESSION FOREIGN_KEY_CHECKS=0; SET SESSION UNIQUE_CHECKS=0;",
         f"-u{config.DEST_DB_USER}", f"--password={config.DEST_DB_PASSWORD}", config.DEST_DB_DATABASE
     ])
 
@@ -264,23 +265,20 @@ def load_sql_file(filepath):
     import tempfile
     
     for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='ignore') as err_file:
+        with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='ignore') as err_file:
+            try:
                 process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err_file, text=False)
                 
-                process.stdin.write(b"SET SESSION sql_mode='';\n")
-                process.stdin.write(b"SET SESSION AUTOCOMMIT=0;\n")
-                
                 file_size = os.path.getsize(filepath)
-                # Define a threshold (e.g., 2GB) for chunking
-                chunk_threshold = 2 * 1024 * 1024 * 1024
+                # Define a threshold (e.g., 512MB) for chunking
+                chunk_threshold = 512 * 1024 * 1024
 
                 if file_size >= chunk_threshold:
                     # Use chunking for very large files to conserve memory and show progress
-                    logger.info("File size is >= 2GB, using chunked loading with progress bar.")
+                    logger.info("File size is >= 512MB, using chunked loading with progress bar.")
                     with open(filepath, 'rb') as f, tqdm(total=file_size, desc=f"Loading {filename}", unit='B', unit_scale=True, leave=False) as pbar:
                         while True:
-                            chunk = f.read(64 * 1024 * 1024)
+                            chunk = f.read(32 * 1024 * 1024)
                             if not chunk:
                                 break
                             process.stdin.write(chunk)
@@ -288,11 +286,10 @@ def load_sql_file(filepath):
                             pbar.update(len(chunk))
                 else:
                     # For smaller files, read all at once for better performance
-                    logger.info("File size is < 2GB, loading file into memory for faster import.")
+                    logger.info("File size is < 512MB, loading file into memory for faster import.")
                     with open(filepath, 'rb') as f:
                         process.stdin.write(f.read())
                         
-                process.stdin.write(b"COMMIT;\n")
                 process.stdin.close()
                 process.wait()
                 
@@ -306,15 +303,15 @@ def load_sql_file(filepath):
                     logger.error("Attempt %s/%s failed to load %s: %s", attempt, MAX_RETRIES, filename, stderr_output)
                     if attempt < MAX_RETRIES:
                         time.sleep(RETRY_DELAY)
-        except Exception as e:
-            # Try to capture stderr from the mysql client for better diagnostics
-            err_file.seek(0)
-            stderr_output = err_file.read()
-            logger.error("Attempt %s/%s unexpected error during SQL loading of %s: %s", attempt, MAX_RETRIES, filename, e)
-            if stderr_output:
-                logger.error("--> MySQL client stderr: %s", stderr_output.strip())
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_DELAY)
+            except Exception as e:
+                # Try to capture stderr from the mysql client for better diagnostics
+                err_file.seek(0)
+                stderr_output = err_file.read()
+                logger.error("Attempt %s/%s unexpected error during SQL loading of %s: %s", attempt, MAX_RETRIES, filename, e)
+                if stderr_output:
+                    logger.error("--> MySQL client stderr: %s", stderr_output.strip())
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY)
                 
     return False
 
