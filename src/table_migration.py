@@ -268,7 +268,6 @@ def load_sql_file(filepath):
             with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='ignore') as err_file:
                 process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err_file, text=False)
                 
-                process.stdin.write(b"SET SESSION sql_log_bin=0;\n")
                 process.stdin.write(b"SET SESSION sql_mode='';\n")
                 process.stdin.write(b"SET SESSION UNIQUE_CHECKS=0;\n")
                 process.stdin.write(b"SET SESSION FOREIGN_KEY_CHECKS=0;\n")
