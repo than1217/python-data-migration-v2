@@ -262,7 +262,6 @@ def load_sql_file(filepath):
 
     logger.info("Loading %s into %s...", filename, config.DEST_DB_DATABASE)
     import tempfile
-    file_size = os.path.getsize(filepath)
     
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -274,14 +273,21 @@ def load_sql_file(filepath):
                 process.stdin.write(b"SET SESSION FOREIGN_KEY_CHECKS=0;\n")
                 process.stdin.write(b"SET SESSION AUTOCOMMIT=0;\n")
                 
-                with open(filepath, 'rb') as f, tqdm(total=file_size, desc=f"Loading {filename}", unit='B', unit_scale=True, leave=False) as pbar:
-                    while True:
-                        chunk = f.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        process.stdin.write(chunk)
-                        process.stdin.flush()
-                        pbar.update(len(chunk))
+                # Use faster, non-chunked method for localhost, which benefits from pipe/socket speed
+                if config.DEST_DB_HOST.lower() in ['localhost', '127.0.0.1']:
+                    with open(filepath, 'rb') as f:
+                        process.stdin.write(f.read())
+                else:
+                    # Use chunking for remote hosts to show progress and handle potential network issues
+                    file_size = os.path.getsize(filepath)
+                    with open(filepath, 'rb') as f, tqdm(total=file_size, desc=f"Loading {filename}", unit='B', unit_scale=True, leave=False) as pbar:
+                        while True:
+                            chunk = f.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            process.stdin.write(chunk)
+                            process.stdin.flush()
+                            pbar.update(len(chunk))
                         
                 process.stdin.write(b"COMMIT;\n")
                 process.stdin.close()
