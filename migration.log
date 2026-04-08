@@ -121,3 +121,44 @@
 2026-04-08 12:34:17,683 - INFO - Database 'consultant_ods' ensured on destination.
 2026-04-08 12:34:17,684 - INFO - Loading tbl_beneficiaries_v2.sql into consultant_ods...
 2026-04-08 12:34:17,689 - INFO - File size is >= 512MB, using chunked loading with progress bar.
+2026-04-08 13:47:08,972 - INFO - Successfully loaded tbl_beneficiaries_v2.sql
+2026-04-08 13:47:09,975 - INFO - Loading for 'tbl_beneficiaries' completed in 4372.29 seconds.
+2026-04-08 13:47:09,975 - INFO - Total migration time for table 'tbl_beneficiaries': 4372.29 seconds.
+2026-04-08 13:47:09,983 - INFO - Loading tbl_certification_v2.sql into consultant_ods...
+2026-04-08 13:47:09,991 - INFO - File size is >= 512MB, using chunked loading with progress bar.
+2026-04-08 14:04:36,483 - ERROR - Attempt 1/3 unexpected error during SQL loading of tbl_certification_v2.sql: [Errno 32] Broken pipe
+2026-04-08 14:04:36,484 - ERROR - --> MySQL client stderr: mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2013 (HY000) at line 357: Lost connection to MySQL server during query
+2026-04-08 14:04:41,493 - INFO - File size is >= 512MB, using chunked loading with progress bar.
+2026-04-08 14:05:41,594 - ERROR - Attempt 2/3 unexpected error during SQL loading of tbl_certification_v2.sql: [Errno 32] Broken pipe
+2026-04-08 14:05:41,594 - ERROR - --> MySQL client stderr: mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 2
+2026-04-08 14:05:46,604 - INFO - File size is >= 512MB, using chunked loading with progress bar.
+2026-04-08 14:06:46,749 - ERROR - Attempt 3/3 unexpected error during SQL loading of tbl_certification_v2.sql: [Errno 32] Broken pipe
+2026-04-08 14:06:46,749 - ERROR - --> MySQL client stderr: mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 2
+2026-04-08 14:06:46,754 - INFO - Loading tbl_child_select_history_v2.sql into consultant_ods...
+2026-04-08 14:06:46,761 - INFO - File size is >= 512MB, using chunked loading with progress bar.
+2026-04-08 14:07:46,908 - ERROR - Attempt 1/3 unexpected error during SQL loading of tbl_child_select_history_v2.sql: [Errno 32] Broken pipe
+2026-04-08 14:07:46,909 - ERROR - --> MySQL client stderr: mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 2
+2026-04-08 14:07:51,919 - INFO - File size is >= 512MB, using chunked loading with progress bar.
+2026-04-08 14:08:52,168 - ERROR - Attempt 2/3 unexpected error during SQL loading of tbl_child_select_history_v2.sql: [Errno 32] Broken pipe
+2026-04-08 14:08:52,168 - ERROR - --> MySQL client stderr: mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 2
+2026-04-08 14:08:57,178 - INFO - File size is >= 512MB, using chunked loading with progress bar.
+2026-04-08 14:16:47,965 - ERROR - Attempt 3/3 unexpected error during SQL loading of tbl_child_select_history_v2.sql: [Errno 32] Broken pipe
+2026-04-08 14:16:47,965 - ERROR - --> MySQL client stderr: mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2013 (HY000) at line 446: Lost connection to MySQL server during query
+2026-04-08 14:16:47,969 - INFO - Loading tbl_set_group_v2.sql into consultant_ods...
+2026-04-08 14:16:47,974 - INFO - File size is < 512MB, loading file into memory for faster import.
+2026-04-08 14:17:48,070 - ERROR - Attempt 1/3 unexpected error during SQL loading of tbl_set_group_v2.sql: [Errno 32] Broken pipe
+2026-04-08 14:17:48,070 - ERROR - --> MySQL client stderr: mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 2
+2026-04-08 14:17:53,077 - INFO - File size is < 512MB, loading file into memory for faster import.
+2026-04-08 14:18:28,717 - INFO - Successfully loaded tbl_set_group_v2.sql
+2026-04-08 14:18:29,718 - INFO - Loading for 'tbl_set_group' completed in 101.75 seconds.
+2026-04-08 14:18:29,719 - INFO - Total migration time for table 'tbl_set_group': 101.75 seconds.
+2026-04-08 14:18:29,722 - INFO - Migration complete: 2/4 tables migrated.
+2026-04-08 14:18:29,723 - INFO - Total migration time: 01:44:12
+2026-04-08 14:18:29,724 - INFO - --- MIGRATION FINISHED ---

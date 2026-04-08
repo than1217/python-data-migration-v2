@@ -5,7 +5,10 @@
         "tbl_child_select_history",
         "tbl_set_group"
     ],
-    "migrated_tables": [],
+    "migrated_tables": [
+        "tbl_beneficiaries",
+        "tbl_set_group"
+    ],
     "pattern": null,
     "from_list": [
         "tbl_set_group",
