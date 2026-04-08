@@ -274,21 +274,26 @@ def load_sql_file(filepath):
                 process.stdin.write(b"SET SESSION FOREIGN_KEY_CHECKS=0;\n")
                 process.stdin.write(b"SET SESSION AUTOCOMMIT=0;\n")
                 
-                # Use faster, non-chunked method for localhost, which benefits from pipe/socket speed
-                if config.DEST_DB_HOST.lower() in ['localhost', '127.0.0.1']:
-                    with open(filepath, 'rb') as f:
-                        process.stdin.write(f.read())
-                else:
-                    # Use chunking for remote hosts to show progress and handle potential network issues
-                    file_size = os.path.getsize(filepath)
+                file_size = os.path.getsize(filepath)
+                # Define a threshold (e.g., 2GB) for chunking
+                chunk_threshold = 2 * 1024 * 1024 * 1024
+
+                if file_size >= chunk_threshold:
+                    # Use chunking for very large files to conserve memory and show progress
+                    logger.info("File size is >= 2GB, using chunked loading with progress bar.")
                     with open(filepath, 'rb') as f, tqdm(total=file_size, desc=f"Loading {filename}", unit='B', unit_scale=True, leave=False) as pbar:
                         while True:
-                            chunk = f.read(1024 * 1024)
+                            chunk = f.read(64 * 1024 * 1024)
                             if not chunk:
                                 break
                             process.stdin.write(chunk)
                             process.stdin.flush()
                             pbar.update(len(chunk))
+                else:
+                    # For smaller files, read all at once for better performance
+                    logger.info("File size is < 2GB, loading file into memory for faster import.")
+                    with open(filepath, 'rb') as f:
+                        process.stdin.write(f.read())
                         
                 process.stdin.write(b"COMMIT;\n")
                 process.stdin.close()
