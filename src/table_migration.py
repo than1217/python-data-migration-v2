@@ -532,16 +532,12 @@ def run_headless(config_file):
 
     # Extract source config
     config.DB_HOST = cfg.get('db_host', config.DB_HOST)
-    if config.DB_HOST == 'localhost':
-        config.DB_HOST = '127.0.0.1'
     config.DB_USER = cfg.get('db_user', config.DB_USER)
     config.DB_PASSWORD = cfg.get('db_password', config.DB_PASSWORD)
     config.DB_DATABASE = cfg.get('db_database', config.DB_DATABASE)
 
     # Extract destination config
     config.DEST_DB_HOST = cfg.get('dest_db_host', config.DEST_DB_HOST)
-    if config.DEST_DB_HOST == 'localhost':
-        config.DEST_DB_HOST = '127.0.0.1'
     config.DEST_DB_USER = cfg.get('dest_db_user', config.DEST_DB_USER)
     config.DEST_DB_PASSWORD = cfg.get('dest_db_password', config.DEST_DB_PASSWORD)
     config.DEST_DB_DATABASE = cfg.get('dest_db_database', config.DEST_DB_DATABASE)
@@ -910,17 +906,17 @@ def main():
                 "1": ("10.255.9.100", "PPIS v2 Production"),
                 "2": ("10.255.9.104", "PPIS v2 CMS SWDI Production"),
                 "3": ("10.255.9.105", "PPIS v2 Staging"),
-                "4": ("127.0.0.1", "Localhost")
+                "4": ("localhost", "Localhost")
             }
         elif main_choice == '2':
             servers = {
                 "1": ("10.10.10.96", "PPIS v3 Staging"),
                 "2": ("10.255.9.111", "PPIS v3 Slave"),
-                "3": ("127.0.0.1", "Localhost")
+                "3": ("localhost", "Localhost")
             }
         else:
             servers = {
-                "1": ("127.0.0.1", "Localhost")
+                "1": ("localhost", "Localhost")
             }
             
         print(f"\n--- Select Server for PPIS{suffix.replace('_','')} ---")
