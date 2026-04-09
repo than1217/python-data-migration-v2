@@ -69,7 +69,7 @@ def get_lib_tables(pattern=None, from_list=None):
                 logger.info(f"Found {len(all_tables)} tables in total. Checking for matches...")
                 print(f"Found {len(all_tables)} tables in total. Checking for matches...")
                 if len(all_tables) < 300:  # Log all tables if the list is not too long
-                    logger.info("Tables found: %s", ", ".join(all_tables))
+                    logger.info("Tables found: %s", ", ".join(str(t) for t in all_tables))
                 tables = []
                 
                 if from_list:
@@ -118,21 +118,27 @@ def run_mysqldump(table, output_file):
     
     logger.info("Dumping table '%s' to %s...", table, output_file)
     import tempfile
+    
+    t_start = time.time()
+    
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='ignore') as err_file:
                 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=err_file, text=False)
                 
                 with open(output_file, "wb") as f, tqdm(desc=f"Dumping {table}", unit="B", unit_scale=True, leave=False) as pbar:
-                    while True:
-                        chunk = process.stdout.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        pbar.update(len(chunk))
+                    if process.stdout is not None:
+                        while True:
+                            chunk = process.stdout.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            pbar.update(len(chunk))
                         
                 process.wait()
                 if process.returncode == 0:
+                    dump_time = time.time() - t_start
+                    logger.info("Successfully dumped table '%s' in %.2f seconds.", table, dump_time)
                     time.sleep(0.5)
                     return True
                 else:
@@ -267,6 +273,8 @@ def load_sql_file(filepath):
     logger.info("Loading %s into %s...", filename, config.DEST_DB_DATABASE)
     import tempfile
     
+    t_start = time.time()
+    
     for attempt in range(1, MAX_RETRIES + 1):
         with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='ignore') as err_file:
             try:
@@ -297,7 +305,8 @@ def load_sql_file(filepath):
                 process.wait()
                 
                 if process.returncode == 0:
-                    logger.info("Successfully loaded %s", filename)
+                    load_time = time.time() - t_start
+                    logger.info("Successfully loaded %s in %.2f seconds.", filename, load_time)
                     time.sleep(1)
                     return True
                 else:
