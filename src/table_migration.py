@@ -28,6 +28,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def format_time(seconds):
+    """Format time to minutes if over 60 seconds, otherwise keep in seconds."""
+    if seconds > 60:
+        return f"{seconds / 60:.2f} minutes"
+    return f"{seconds:.2f} seconds"
+
 def load_state():
     """Loads the current migration state from a JSON file."""
     if os.path.exists(state_file):
@@ -138,7 +144,7 @@ def run_mysqldump(table, output_file):
                 process.wait()
                 if process.returncode == 0:
                     dump_time = time.time() - t_start
-                    logger.info("Successfully dumped table '%s' in %.2f seconds.", table, dump_time)
+                    logger.info("Successfully dumped table '%s' in %s.", table, format_time(dump_time))
                     time.sleep(0.5)
                     return True
                 else:
@@ -306,7 +312,7 @@ def load_sql_file(filepath):
                 
                 if process.returncode == 0:
                     load_time = time.time() - t_start
-                    logger.info("Successfully loaded %s in %.2f seconds.", filename, load_time)
+                    logger.info("Successfully loaded %s in %s.", filename, format_time(load_time))
                     time.sleep(1)
                     return True
                 else:
@@ -374,7 +380,7 @@ def run_migration(tables, state, suffix):
             if process_dump_file(raw_dump, processed_dump, table, suffix):
                 dump_process_time = time.time() - t_start
                 table_times[table] = dump_process_time
-                logger.info("Dump and process for '%s' completed in %.2f seconds.", table, dump_process_time)
+                logger.info("Dump and process for '%s' completed in %s.", table, format_time(dump_process_time))
                 processed_files.append((table, processed_dump))
                 state["processed_tables"].append(table)
                 save_state(state)
@@ -408,8 +414,8 @@ def run_migration(tables, state, suffix):
             if load_sql_file(f):
                 load_time = time.time() - t_start
                 total_time = table_times.get(table, 0) + load_time
-                logger.info("Loading for '%s' completed in %.2f seconds.", table, load_time)
-                logger.info("Total migration time for table '%s': %.2f seconds.", table, total_time)
+                logger.info("Loading for '%s' completed in %s.", table, format_time(load_time))
+                logger.info("Total migration time for table '%s': %s.", table, format_time(total_time))
                 successful_migrations += 1
                 state["migrated_tables"].append(table)
                 save_state(state)
